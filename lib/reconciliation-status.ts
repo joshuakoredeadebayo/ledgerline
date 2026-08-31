@@ -117,7 +117,7 @@ export async function recomputeReconciliationStatus(reconciliationId: string) {
   // reflects what's actually there right now — this is what makes that
   // number real everywhere it's shown (dashboard, this page, close),
   // rather than only ever reading zero.
-  await syncSuggestedMatches(reconciliationId, recon.entity_id, recon.account_id);
+  await syncSuggestedMatches(reconciliationId, recon.entity_id, recon.account_id, recon.period_start, recon.period_end);
 
   const { count: pendingCount } = await supabase
     .from("matches")
