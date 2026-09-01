@@ -15,7 +15,11 @@ export function ConnectBankButton({ entities, presetEntityId }: { entities: Enti
   const [pendingAccounts, setPendingAccounts] = useState<PendingAccount[] | null>(null);
   const [pendingItemId, setPendingItemId] = useState<string | null>(null);
 
-  const onSuccess = useCallback(async (publicToken: string) => {
+  const onSuccess = useCallback(async (publicToken: string | null) => {
+    if (!publicToken) {
+      setError("Bank connection did not complete. Please try again.");
+      return;
+    }
     setLoading(true);
     setError(null);
     const result = await exchangePublicToken(publicToken, presetEntityId);
@@ -29,7 +33,7 @@ export function ConnectBankButton({ entities, presetEntityId }: { entities: Enti
       setPendingAccounts(result.pendingAccounts);
       setPendingItemId(result.plaidItemId);
     }
-  }, []);
+  }, [presetEntityId]);
 
   const { open, ready } = usePlaidLink({
     token: linkToken ?? "",
