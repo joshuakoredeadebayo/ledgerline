@@ -4,6 +4,7 @@ import { can } from "@/lib/permissions";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Building2 } from "lucide-react";
 import { CreateEntityForm } from "@/components/entities/create-entity-form";
+import { ConnectBankButton } from "@/components/plaid/connect-bank-button";
 import Link from "next/link";
 
 export default async function EntitiesPage() {
@@ -28,7 +29,14 @@ export default async function EntitiesPage() {
         </div>
       </div>
 
-      {canManage && <CreateEntityForm />}
+      {canManage && (
+        <div className="flex flex-wrap gap-3">
+          <CreateEntityForm />
+          {entities && entities.length > 0 && (
+            <ConnectBankButton entities={entities.map((e) => ({ id: e.id, name: e.name }))} />
+          )}
+        </div>
+      )}
 
       {entities && entities.length > 0 ? (
         <div className="divide-y divide-ink-100 rounded-lg border border-ink-100 bg-white">
