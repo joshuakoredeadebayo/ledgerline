@@ -25,12 +25,20 @@ export function EntityAssignmentPicker({
     setPending(true);
     setError(null);
 
-    const assignments = accounts.map((a) => ({
-      plaidAccountId: a.plaidAccountId,
-      entityId: selections[a.plaidAccountId],
-      name: a.name,
-      accountType: a.accountType,
-    }));
+    const assignments = accounts
+      .filter((a) => selections[a.plaidAccountId])
+      .map((a) => ({
+        plaidAccountId: a.plaidAccountId,
+        entityId: selections[a.plaidAccountId] as string,
+        name: a.name,
+        accountType: a.accountType,
+      }));
+
+    if (assignments.length !== accounts.length) {
+      setPending(false);
+      setError("Please assign every account to an entity before continuing.");
+      return;
+    }
 
     const result = await assignPlaidAccountsToEntities(assignments, plaidItemId);
     setPending(false);
