@@ -45,6 +45,12 @@ function mapPlaidTypeToAccountType(plaidType: string): PendingAccount["accountTy
  * Starts a Plaid Link session. Called from the client when the person
  * clicks "Connect bank" — the returned link_token is handed to Plaid's
  * Link widget, which drives the actual bank-login UI.
+ *
+ * No redirect_uri is set here: per Plaid's docs, web integrations
+ * (as opposed to native iOS/Android SDKs) handle OAuth institutions
+ * via an automatic popup window and don't require one. Passing an
+ * unregistered redirect_uri would cause linkTokenCreate to fail for
+ * every institution, not just OAuth ones.
  */
 export async function createLinkToken(): Promise<{ linkToken?: string; error?: string }> {
   const membership = await getCurrentMembership();
