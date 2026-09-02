@@ -1,22 +1,11 @@
 "use client";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { usePlaidLink } from "react-plaid-link";
 import { createLinkToken, exchangePublicToken, type PendingAccount } from "@/lib/actions/plaid";
 import { Button } from "@/components/ui/button";
 import { EntityAssignmentPicker } from "@/components/plaid/entity-assignment-picker";
 
 type Entity = { id: string; name: string };
-
-// Keys used to survive the full-page redirect that OAuth institutions
-// (Citibank, etc.) trigger. React state doesn't persist across that
-// redirect, so anything Link needs to resume has to live here instead.
-// Read/written from both this component and PlaidOAuthRedirectHandler.
-const STORAGE_KEYS = {
-  linkToken: "plaid_link_token",
-  presetEntityId: "plaid_preset_entity_id",
-  entities: "plaid_entities",
-  returnPath: "plaid_return_path",
-} as const;
 
 export function ConnectBankButton({ entities, presetEntityId }: { entities: Entity[]; presetEntityId?: string }) {
   const [linkToken, setLinkToken] = useState<string | null>(null);
@@ -25,15 +14,12 @@ export function ConnectBankButton({ entities, presetEntityId }: { entities: Enti
   const [pendingAccounts, setPendingAccounts] = useState<PendingAccount[] | null>(null);
   const [pendingItemId, setPendingItemId] = useState<string | null>(null);
 
-  const clearPersistedSession = useCallback(() => {
-    sessionStorage.removeItem(STORAGE_KEYS.linkToken);
-    sessionStorage.removeItem(STORAGE_KEYS.presetEntityId);
-    sessionStorage.removeItem(STORAGE_KEYS.entities);
-    sessionStorage.removeItem(STORAGE_KEYS.returnPath);
-  }, []);
-
   const onSuccess = useCallback(async (publicToken: string | null) => {
-    clearPersistedSession();
+    // Clear the token immediately so the effect below won't reopen
+    // Link on the next render — this was the actual bug: without this,
+    // the modal kept reopening itself after every successful connection.
+    setLinkToken(null);
+
     if (!publicToken) {
       setError("Bank connection did not complete. Please try again.");
       return;
@@ -50,20 +36,29 @@ export function ConnectBankButton({ entities, presetEntityId }: { entities: Enti
       setPendingAccounts(result.pendingAccounts);
       setPendingItemId(result.plaidItemId);
     }
-  }, [presetEntityId, clearPersistedSession]);
+  }, [presetEntityId]);
 
   const onExit = useCallback(() => {
-    // Person closed Link (or it errored) without completing — clear
-    // the persisted session so a later "Connect bank" click starts
-    // fresh instead of trying to resume a dead link_token.
-    clearPersistedSession();
-  }, [clearPersistedSession]);
+    // Person closed Link or it errored without completing — clear the
+    // token here too, for the same reason as onSuccess above.
+    setLinkToken(null);
+  }, []);
 
   const { open, ready } = usePlaidLink({
     token: linkToken ?? "",
     onSuccess,
     onExit,
   });
+
+  // Opens Link exactly once per linkToken, the moment Plaid's script
+  // reports ready — not on every render. linkToken is reset to null in
+  // onSuccess/onExit specifically so this effect doesn't refire and
+  // reopen the modal after the flow has already finished.
+  useEffect(() => {
+    if (linkToken && ready) {
+      open();
+    }
+  }, [linkToken, ready, open]);
 
   const handleConnectClick = async () => {
     setLoading(true);
@@ -74,20 +69,8 @@ export function ConnectBankButton({ entities, presetEntityId }: { entities: Enti
       setError(result.error ?? "Could not start bank connection.");
       return;
     }
-    // Persist everything needed to resume this flow if Plaid redirects
-    // the whole page away for an OAuth bank login and back.
-    sessionStorage.setItem(STORAGE_KEYS.linkToken, result.linkToken);
-    sessionStorage.setItem(STORAGE_KEYS.presetEntityId, presetEntityId ?? "");
-    sessionStorage.setItem(STORAGE_KEYS.entities, JSON.stringify(entities));
-    sessionStorage.setItem(STORAGE_KEYS.returnPath, window.location.pathname);
     setLinkToken(result.linkToken);
   };
-
-  // Once linkToken is set and Plaid's script reports ready, open the
-  // widget immediately rather than requiring a second click.
-  if (linkToken && ready && !pendingAccounts) {
-    open();
-  }
 
   if (pendingAccounts && pendingItemId) {
     return <EntityAssignmentPicker accounts={pendingAccounts} plaidItemId={pendingItemId} entities={entities} />;
