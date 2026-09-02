@@ -151,8 +151,13 @@ export async function exchangePublicToken(publicToken: string, presetEntityId?: 
     .select("id")
     .eq("organization_id", membership.organizationId);
 
-  if ((entities ?? []).length === 1) {
-    const result = await createAccountsForEntity(entities![0].id, plaidItem.id, pendingAccounts);
+  const entityList = entities ?? [];
+  if (entityList.length === 1) {
+    const entity = entityList[0];
+    if (!entity) {
+      return { error: "Unexpected error resolving entity." };
+    }
+    const result = await createAccountsForEntity(entity.id, plaidItem.id, pendingAccounts);
     if (result.error) return { error: result.error };
     revalidatePath("/entities");
     revalidatePath("/reconciliation");
