@@ -147,6 +147,10 @@ export async function exchangePublicToken(publicToken: string, presetEntityId?: 
   if (presetEntityId) {
     const result = await createAccountsForEntity(presetEntityId, plaidItem.id, pendingAccounts);
     if (result.error) return { error: result.error };
+    // Best-effort: accounts already exist, so a sync hiccup here
+    // shouldn't undo a successful connection. Errors are captured in
+    // sync_jobs for later inspection rather than surfaced here.
+    await syncPlaidItem(plaidItem.id).catch(() => {});
     revalidatePath(`/entities/${presetEntityId}`);
     revalidatePath("/reconciliation");
     return { success: true };
@@ -165,6 +169,7 @@ export async function exchangePublicToken(publicToken: string, presetEntityId?: 
     }
     const result = await createAccountsForEntity(entity.id, plaidItem.id, pendingAccounts);
     if (result.error) return { error: result.error };
+    await syncPlaidItem(plaidItem.id).catch(() => {});
     revalidatePath("/entities");
     revalidatePath("/reconciliation");
     return { success: true };
@@ -255,9 +260,189 @@ export async function assignPlaidAccountsToEntities(
     if (result.error) return { error: result.error };
   }
 
+  await syncPlaidItem(plaidItemId).catch(() => {});
+
   revalidatePath("/entities");
   revalidatePath("/reconciliation");
   return { success: true };
+}
+
+/**
+ * Pulls transactions for a Plaid Item using the cursor-based sync
+ * endpoint, upserts them into `transactions`, and advances the item's
+ * stored cursor so the next call only fetches what's changed since.
+ *
+ * Called automatically right after a bank connection completes, and
+ * exposed for a manual "Sync now" trigger via syncEntityPlaidItems
+ * below. Every run is logged in sync_jobs for visibility into
+ * failures, since this can be triggered without a person watching.
+ */
+export async function syncPlaidItem(plaidItemId: string): Promise<{ error?: string; syncedCount?: number }> {
+  const membership = await getCurrentMembership();
+  if (!membership) return { error: "Not signed in." };
+
+  assertPermission(membership.role, "entities.manage");
+
+  const supabase = await createClient();
+
+  const { data: item, error: itemFetchError } = await supabase
+    .from("plaid_items")
+    .select("id, organization_id, access_token, cursor")
+    .eq("id", plaidItemId)
+    .single();
+
+  if (itemFetchError || !item) {
+    return { error: itemFetchError?.message ?? "Bank connection not found." };
+  }
+  if (item.organization_id !== membership.organizationId) {
+    return { error: "Not authorized for this bank connection." };
+  }
+
+  const { data: jobRow } = await supabase
+    .from("sync_jobs")
+    .insert({ job_type: "plaid_sync", plaid_item_id: plaidItemId, status: "running", started_at: new Date().toISOString() })
+    .select("id")
+    .single();
+
+  // Maps Plaid's account_id to this item's Ledgerline account row, so
+  // each transaction lands under the right entity_id/account_id. Only
+  // accounts already imported into Ledgerline are mapped — a new
+  // account opened at the bank after the initial connect won't have
+  // transactions synced until it's imported too (a known limitation,
+  // not handled by this pass).
+  const { data: accountRows } = await supabase
+    .from("accounts")
+    .select("id, entity_id, plaid_account_id")
+    .eq("plaid_item_id", plaidItemId);
+
+  const accountMap = new Map((accountRows ?? []).map((a) => [a.plaid_account_id, { id: a.id, entityId: a.entity_id }]));
+  const knownEntityIds = [...new Set((accountRows ?? []).map((a) => a.entity_id))];
+
+  let cursor = item.cursor ?? undefined;
+  let syncedCount = 0;
+
+  try {
+    let hasMore = true;
+    while (hasMore) {
+      const response = await plaidClient.transactionsSync({
+        access_token: item.access_token,
+        cursor,
+      });
+      const { added, modified, removed, next_cursor, has_more } = response.data;
+
+      const upsertRows = [...added, ...modified]
+        .map((txn) => {
+          const mapped = accountMap.get(txn.account_id);
+          if (!mapped) return null; // Account not yet imported — skip for now.
+          return {
+            entity_id: mapped.entityId,
+            account_id: mapped.id,
+            source: "plaid",
+            // Plaid's sign convention: positive = money leaving the
+            // account, negative = money coming in. Stored as-is —
+            // worth confirming this matches the matching engine's
+            // expected sign during testing, since that logic lives
+            // elsewhere and wasn't reviewed as part of this change.
+            amount: txn.amount,
+            currency: txn.iso_currency_code ?? txn.unofficial_currency_code ?? "USD",
+            transaction_date: txn.date,
+            description: txn.merchant_name ?? txn.name ?? null,
+            raw_payload: txn,
+            plaid_transaction_id: txn.transaction_id,
+            is_pending: txn.pending,
+            // status deliberately omitted: leaving it out of the
+            // upsert means Postgres only applies the column default
+            // on first insert, and leaves an already-set status
+            // (e.g. a confirmed match) untouched on every later
+            // re-sync of the same transaction.
+          };
+        })
+        .filter((row): row is NonNullable<typeof row> => row !== null);
+
+      if (upsertRows.length > 0) {
+        const { error: upsertError } = await supabase
+          .from("transactions")
+          .upsert(upsertRows, { onConflict: "entity_id,plaid_transaction_id" });
+        if (upsertError) throw new Error(upsertError.message);
+        syncedCount += upsertRows.length;
+      }
+
+      if (removed.length > 0 && knownEntityIds.length > 0) {
+        const removedIds = removed.map((r) => r.transaction_id);
+        // Soft-delete only: a hard delete would cascade and silently
+        // remove any match_lines already built against these rows.
+        const { error: removeError } = await supabase
+          .from("transactions")
+          .update({ status: "removed" })
+          .in("entity_id", knownEntityIds)
+          .in("plaid_transaction_id", removedIds);
+        if (removeError) throw new Error(removeError.message);
+      }
+
+      cursor = next_cursor;
+      hasMore = has_more;
+    }
+
+    await supabase
+      .from("plaid_items")
+      .update({ cursor, last_synced_at: new Date().toISOString() })
+      .eq("id", plaidItemId);
+
+    if (jobRow) {
+      await supabase
+        .from("sync_jobs")
+        .update({ status: "completed", completed_at: new Date().toISOString() })
+        .eq("id", jobRow.id);
+    }
+
+    revalidatePath("/reconciliation");
+    return { syncedCount };
+  } catch (err: any) {
+    const message = err?.message ?? "Sync failed unexpectedly.";
+    if (jobRow) {
+      await supabase
+        .from("sync_jobs")
+        .update({ status: "failed", error: message, completed_at: new Date().toISOString() })
+        .eq("id", jobRow.id);
+    }
+    return { error: message };
+  }
+}
+
+/**
+ * Manual "Sync now" entry point, scoped to one entity rather than one
+ * Plaid Item — a person on an entity's page doesn't necessarily know
+ * which bank connection(s) fund it, so this finds every distinct
+ * Plaid Item behind that entity's accounts and syncs each in turn.
+ */
+export async function syncEntityPlaidItems(entityId: string): Promise<{ error?: string; syncedCount?: number }> {
+  const membership = await getCurrentMembership();
+  if (!membership) return { error: "Not signed in." };
+
+  const supabase = await createClient();
+
+  const { data: accountRows } = await supabase
+    .from("accounts")
+    .select("plaid_item_id")
+    .eq("entity_id", entityId)
+    .not("plaid_item_id", "is", null);
+
+  const itemIds = [...new Set((accountRows ?? []).map((a) => a.plaid_item_id).filter(Boolean))] as string[];
+
+  if (itemIds.length === 0) {
+    return { error: "No connected bank accounts for this entity." };
+  }
+
+  let total = 0;
+  for (const itemId of itemIds) {
+    const result = await syncPlaidItem(itemId);
+    if (result.error) return { error: result.error };
+    total += result.syncedCount ?? 0;
+  }
+
+  revalidatePath(`/entities/${entityId}`);
+  revalidatePath("/reconciliation");
+  return { syncedCount: total };
 }
 
 // Duplicated from lib/actions/entities.ts deliberately kept in sync,

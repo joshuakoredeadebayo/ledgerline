@@ -5,7 +5,13 @@ const PUBLIC_PATHS = ["/", "/pricing", "/login", "/signup", "/verify"];
 
 export async function middleware(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
-  let response = NextResponse.next({ request: { headers: requestHeaders } });
+
+  // Cookies Supabase wants set on the response (e.g. a refreshed
+  // session token), collected here rather than applied immediately —
+  // we don't know yet whether the final response will be a redirect
+  // or a pass-through, and want to apply them to whichever one we
+  // actually return, exactly once, at the end.
+  let cookiesToApply: { name: string; value: string; options: CookieOptions }[] = [];
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -17,32 +23,25 @@ export async function middleware(request: NextRequest) {
         },
         setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
-          response = NextResponse.next({ request: { headers: requestHeaders } });
-          cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options)
-          );
+          cookiesToApply = cookiesToSet;
         },
       },
     }
   );
 
-  // This is the one network round-trip to Supabase Auth per request —
-  // required here to actually verify the session and refresh it if
-  // expired. We forward the result below via headers so nested layouts
-  // (which re-run on every navigation) don't have to call getUser()
-  // again and pay a second round-trip for the same verification.
+  // The one network round-trip to Supabase Auth per request — required
+  // to verify the session and refresh it if expired. The verified
+  // result is forwarded to nested layouts via requestHeaders below, so
+  // they don't need to call getUser() again and pay a second
+  // round-trip for the same verification.
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Set on requestHeaders (forwarded to Server Components) rather than
-  // response.headers (which only reaches the browser). Always
-  // overwritten here from the verified `user`, so this can't be spoofed
-  // by a client sending its own x-user-id header — middleware runs
-  // first and this value always wins.
+  // Always overwritten here from the verified `user`, so this can't be
+  // spoofed by a client sending its own x-user-id header.
   requestHeaders.set("x-user-id", user?.id ?? "");
   requestHeaders.set("x-user-email", user?.email ?? "");
-  response = NextResponse.next({ request: { headers: requestHeaders } });
 
   const path = request.nextUrl.pathname;
   const isPublic = PUBLIC_PATHS.some((p) => path === p) || path.startsWith("/api/webhooks");
@@ -50,13 +49,19 @@ export async function middleware(request: NextRequest) {
   if (!user && !isPublic) {
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("redirect", path);
-    return NextResponse.redirect(loginUrl);
+    const redirectResponse = NextResponse.redirect(loginUrl);
+    cookiesToApply.forEach(({ name, value, options }) => redirectResponse.cookies.set(name, value, options));
+    return redirectResponse;
   }
 
   if (user && (path === "/login" || path === "/signup")) {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+    const redirectResponse = NextResponse.redirect(new URL("/dashboard", request.url));
+    cookiesToApply.forEach(({ name, value, options }) => redirectResponse.cookies.set(name, value, options));
+    return redirectResponse;
   }
 
+  const response = NextResponse.next({ request: { headers: requestHeaders } });
+  cookiesToApply.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
   return response;
 }
 
