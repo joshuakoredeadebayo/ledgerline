@@ -10,10 +10,12 @@ export function EntityAssignmentPicker({
   accounts,
   plaidItemId,
   entities,
+  onSuccess,
 }: {
   accounts: PendingAccount[];
   plaidItemId: string;
   entities: Entity[];
+  onSuccess: () => void;
 }) {
   const [selections, setSelections] = useState<Record<string, string>>({});
   const [pending, setPending] = useState(false);
@@ -45,10 +47,14 @@ export function EntityAssignmentPicker({
 
     if (result?.error) {
       setError(result.error);
+      return;
     }
-    // On success, the server action revalidates the relevant paths;
-    // this component naturally stops rendering once the parent's
-    // pendingAccounts state is cleared by the caller.
+
+    // This was the actual bug: nothing previously told the parent the
+    // import had finished, so this component just kept rendering with
+    // no visible confirmation — looking like the click did nothing,
+    // even though the accounts were created successfully.
+    onSuccess();
   };
 
   return (

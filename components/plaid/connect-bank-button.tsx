@@ -73,7 +73,17 @@ export function ConnectBankButton({ entities, presetEntityId }: { entities: Enti
   };
 
   if (pendingAccounts && pendingItemId) {
-    return <EntityAssignmentPicker accounts={pendingAccounts} plaidItemId={pendingItemId} entities={entities} />;
+    return (
+      <EntityAssignmentPicker
+        accounts={pendingAccounts}
+        plaidItemId={pendingItemId}
+        entities={entities}
+        onSuccess={() => {
+          setPendingAccounts(null);
+          setPendingItemId(null);
+        }}
+      />
+    );
   }
 
   return (
