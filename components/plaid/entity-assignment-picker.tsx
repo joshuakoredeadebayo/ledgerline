@@ -88,6 +88,9 @@ export function EntityAssignmentPicker({
       <Button onClick={handleSubmit} disabled={!allAssigned} loading={pending}>
         Confirm and import
       </Button>
+      {!allAssigned && !pending && (
+        <p className="text-sm text-ink-500">Select an entity for every account above to continue.</p>
+      )}
       {error && <p className="text-sm text-status-exception">{error}</p>}
     </div>
   );
