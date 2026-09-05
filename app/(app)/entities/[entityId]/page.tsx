@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Landmark } from "lucide-react";
 import { CreateAccountForm } from "@/components/entities/create-account-form";
 import { ConnectBankButton } from "@/components/plaid/connect-bank-button";
+import { SyncTransactionsButton } from "@/components/plaid/sync-transactions-button";
 
 export default async function EntityDetailPage({ params }: { params: Promise<{ entityId: string }> }) {
   const { entityId } = await params;
@@ -21,6 +22,7 @@ export default async function EntityDetailPage({ params }: { params: Promise<{ e
     .eq("entity_id", entityId)
     .order("account_type");
   const canManage = membership ? can(membership.role, "entities.manage") : false;
+  const hasPlaidAccounts = (accounts ?? []).some((a) => a.source === "plaid");
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div>
@@ -32,6 +34,7 @@ export default async function EntityDetailPage({ params }: { params: Promise<{ e
         <div className="flex flex-wrap gap-3">
           <CreateAccountForm entityId={entity.id} />
           <ConnectBankButton entities={[{ id: entity.id, name: entity.name }]} presetEntityId={entity.id} />
+          {hasPlaidAccounts && <SyncTransactionsButton entityId={entity.id} />}
         </div>
       )}
       {accounts && accounts.length > 0 ? (
