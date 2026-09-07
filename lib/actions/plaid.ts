@@ -277,7 +277,7 @@ export async function assignPlaidAccountsToEntities(
  * below. Every run is logged in sync_jobs for visibility into
  * failures, since this can be triggered without a person watching.
  */
-export async function syncPlaidItem(plaidItemId: string): Promise<{ error?: string; syncedCount?: number }> {
+export async function syncPlaidItem(plaidItemId: string): Promise<{ error?: string; syncedCount?: number; fetchedFromPlaid?: number; unmatchedAccountIds?: string[] }> {
   const membership = await getCurrentMembership();
   if (!membership) return { error: "Not signed in." };
 
@@ -329,6 +329,8 @@ export async function syncPlaidItem(plaidItemId: string): Promise<{ error?: stri
 
   let cursor = item.cursor ?? undefined;
   let syncedCount = 0;
+  let fetchedFromPlaid = 0;
+  const unmatchedAccountIds = new Set<string>();
 
   try {
     let hasMore = true;
@@ -338,11 +340,15 @@ export async function syncPlaidItem(plaidItemId: string): Promise<{ error?: stri
         cursor,
       });
       const { added, modified, removed, next_cursor, has_more } = response.data;
+      fetchedFromPlaid += added.length + modified.length;
 
       const upsertRows = [...added, ...modified]
         .map((txn) => {
           const mapped = accountMap.get(txn.account_id);
-          if (!mapped) return null; // Account not yet imported — skip for now.
+          if (!mapped) {
+            unmatchedAccountIds.add(txn.account_id); // Account not yet imported — skip for now.
+            return null;
+          }
           return {
             entity_id: mapped.entityId,
             account_id: mapped.id,
@@ -405,7 +411,7 @@ export async function syncPlaidItem(plaidItemId: string): Promise<{ error?: stri
     }
 
     revalidatePath("/reconciliation");
-    return { syncedCount };
+    return { syncedCount, fetchedFromPlaid, unmatchedAccountIds: [...unmatchedAccountIds] };
   } catch (err: any) {
     const message = err?.message ?? "Sync failed unexpectedly.";
     if (jobRow) {
@@ -424,7 +430,7 @@ export async function syncPlaidItem(plaidItemId: string): Promise<{ error?: stri
  * which bank connection(s) fund it, so this finds every distinct
  * Plaid Item behind that entity's accounts and syncs each in turn.
  */
-export async function syncEntityPlaidItems(entityId: string): Promise<{ error?: string; syncedCount?: number }> {
+export async function syncEntityPlaidItems(entityId: string): Promise<{ error?: string; syncedCount?: number; fetchedFromPlaid?: number; unmatchedAccountIds?: string[] }> {
   const membership = await getCurrentMembership();
   if (!membership) return { error: "Not signed in." };
 
@@ -443,15 +449,19 @@ export async function syncEntityPlaidItems(entityId: string): Promise<{ error?: 
   }
 
   let total = 0;
+  let totalFetched = 0;
+  const allUnmatched = new Set<string>();
   for (const itemId of itemIds) {
     const result = await syncPlaidItem(itemId);
     if (result.error) return { error: result.error };
     total += result.syncedCount ?? 0;
+    totalFetched += result.fetchedFromPlaid ?? 0;
+    (result.unmatchedAccountIds ?? []).forEach((id) => allUnmatched.add(id));
   }
 
   revalidatePath(`/entities/${entityId}`);
   revalidatePath("/reconciliation");
-  return { syncedCount: total };
+  return { syncedCount: total, fetchedFromPlaid: totalFetched, unmatchedAccountIds: [...allUnmatched] };
 }
 
 // Duplicated from lib/actions/entities.ts deliberately kept in sync,
