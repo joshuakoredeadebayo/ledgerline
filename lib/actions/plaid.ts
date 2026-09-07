@@ -298,11 +298,20 @@ export async function syncPlaidItem(plaidItemId: string): Promise<{ error?: stri
     return { error: "Not authorized for this bank connection." };
   }
 
-  const { data: jobRow } = await supabase
+  const { data: jobRow, error: jobInsertError } = await supabase
     .from("sync_jobs")
     .insert({ job_type: "plaid_sync", plaid_item_id: plaidItemId, status: "running", started_at: new Date().toISOString() })
     .select("id")
     .single();
+
+  if (jobInsertError) {
+    // Surfaced directly rather than only logged: this failing (e.g.
+    // an RLS policy rejecting a null entity_id on an item-level job)
+    // previously looked identical to "ran fine, found nothing to
+    // sync" from the UI, with no way to tell without checking
+    // Vercel's function logs.
+    return { error: `Could not start sync job: ${jobInsertError.message}` };
+  }
 
   // Maps Plaid's account_id to this item's Ledgerline account row, so
   // each transaction lands under the right entity_id/account_id. Only
