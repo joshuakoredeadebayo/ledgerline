@@ -339,7 +339,22 @@ export async function syncPlaidItem(plaidItemId: string): Promise<{ error?: stri
         access_token: item.access_token,
         cursor,
       });
-      const { added, modified, removed, next_cursor, has_more } = response.data;
+      const { added, modified, removed, next_cursor, has_more, transactions_update_status } = response.data;
+
+      // TEMPORARY diagnostic logging — remove once the zero-transactions
+      // issue is resolved. transactions_update_status in particular
+      // matters: Plaid sandbox items can report NOT_READY or
+      // INITIAL_UPDATE_COMPLETE while still populating; syncing before
+      // that finishes can legitimately return empty added/modified.
+      console.log("[plaid sync] item:", plaidItemId, {
+        added: added.length,
+        modified: modified.length,
+        removed: removed.length,
+        has_more,
+        transactions_update_status,
+        request_id: (response.data as any).request_id,
+      });
+
       fetchedFromPlaid += added.length + modified.length;
 
       const upsertRows = [...added, ...modified]
