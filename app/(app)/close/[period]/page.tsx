@@ -5,7 +5,6 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentMembership } from "@/lib/actions/membership";
 import { can } from "@/lib/permissions";
 import { recomputeCloseChecklist } from "@/lib/close-period-status";
-import { getOrCreateReconciliationPeriod, recomputeReconciliationStatus } from "@/lib/reconciliation-status";
 import { Badge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/utils";
 import { ChecklistItemRow } from "@/components/close/checklist-item-row";
@@ -28,27 +27,10 @@ export default async function ClosePeriodPage({ params }: { params: Promise<{ pe
 
   if (!periodLookup) notFound();
 
-  // Same reasoning as the Close list page — refresh every account's
-  // reconciliation status for this entity/period before computing the
-  // checklist, so "verified automatically" is actually current rather
-  // than whatever it happened to be the last time someone opened that
-  // specific account's page.
-  if (membership) {
-    const { data: accounts } = await supabase
-      .from("accounts")
-      .select("id")
-      .eq("entity_id", periodLookup.entity_id);
-    for (const account of accounts ?? []) {
-      const reconciliationId = await getOrCreateReconciliationPeriod(
-        periodLookup.entity_id,
-        account.id,
-        periodLookup.period_start,
-        membership.userId
-      );
-      await recomputeReconciliationStatus(reconciliationId);
-    }
-  }
-
+  // No longer loops over every account and recomputes reconciliation
+  // status here — see close/page.tsx for the full reasoning. This was
+  // the same anti-pattern, just one level deeper (per period instead of
+  // per entity list), and equally expensive on every view.
   await recomputeCloseChecklist(closePeriodId);
 
   const { data: period } = await supabase

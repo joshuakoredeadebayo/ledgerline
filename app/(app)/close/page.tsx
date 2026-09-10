@@ -3,7 +3,6 @@ import { ClipboardCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentMembership } from "@/lib/actions/membership";
 import { getOrCreateClosePeriod, recomputeCloseChecklist } from "@/lib/close-period-status";
-import { getOrCreateReconciliationPeriod, recomputeReconciliationStatus } from "@/lib/reconciliation-status";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/shared/empty-state";
 
@@ -30,22 +29,13 @@ export default async function ClosePage() {
 
   if (membership) {
     for (const entity of entities ?? []) {
-      // Refresh every account's reconciliation status for this entity
-      // before computing the checklist — otherwise "All accounts
-      // reconciled" and "No open exceptions" only reflect whatever was
-      // last true the moment someone happened to open that specific
-      // account's page, not the current truth.
-      const { data: accounts } = await supabase.from("accounts").select("id").eq("entity_id", entity.id);
-      for (const account of accounts ?? []) {
-        const reconciliationId = await getOrCreateReconciliationPeriod(
-          entity.id,
-          account.id,
-          new Date().toISOString(),
-          membership.userId
-        );
-        await recomputeReconciliationStatus(reconciliationId);
-      }
-
+      // No longer loops over every account and recomputes reconciliation
+      // status here — that was the single biggest source of app-wide
+      // slowness, since it ran on every visit to this page regardless of
+      // whether anything had actually changed. recomputeCloseChecklist
+      // below reads reconciliation status as it currently stands, kept
+      // fresh by the actual events that change it (match actions,
+      // transaction syncs) rather than by this page being viewed.
       const closePeriodId = await getOrCreateClosePeriod(entity.id, new Date().toISOString(), membership.userId);
       await recomputeCloseChecklist(closePeriodId);
 

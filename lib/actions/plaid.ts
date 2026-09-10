@@ -5,6 +5,7 @@ import { CountryCode, Products } from "plaid";
 import { plaidClient } from "@/lib/plaid/client";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentMembership } from "@/lib/actions/membership";
+import { getOrCreateReconciliationPeriod, recomputeReconciliationStatus } from "@/lib/reconciliation-status";
 import { assertPermission } from "@/lib/permissions";
 
 export type PlaidActionState =
@@ -305,12 +306,11 @@ export async function syncPlaidItem(plaidItemId: string): Promise<{ error?: stri
     .single();
 
   if (jobInsertError) {
-    // Surfaced directly rather than only logged: this failing (e.g.
-    // an RLS policy rejecting a null entity_id on an item-level job)
-    // previously looked identical to "ran fine, found nothing to
-    // sync" from the UI, with no way to tell without checking
-    // Vercel's function logs.
-    return { error: `Could not start sync job: ${jobInsertError.message}` };
+    // Non-blocking: job logging failing shouldn't prevent the actual
+    // sync from running. This was made blocking temporarily to
+    // diagnose a missing RLS policy on sync_jobs — now fixed — so a
+    // future logging hiccup here shouldn't halt real transaction sync.
+    console.error("sync_jobs insert failed:", jobInsertError.message);
   }
 
   // Maps Plaid's account_id to this item's Ledgerline account row, so
@@ -331,6 +331,12 @@ export async function syncPlaidItem(plaidItemId: string): Promise<{ error?: stri
   let syncedCount = 0;
   let fetchedFromPlaid = 0;
   const unmatchedAccountIds = new Set<string>();
+  // Only accounts that actually received an added/modified transaction
+  // this run — used below to trigger a scoped reconciliation recompute,
+  // rather than the org-wide "recompute everything on every page view"
+  // pattern that was removed from dashboard/close pages for being the
+  // single biggest source of app-wide slowness.
+  const affectedAccounts = new Map<string, { entityId: string }>();
 
   try {
     let hasMore = true;
@@ -339,22 +345,7 @@ export async function syncPlaidItem(plaidItemId: string): Promise<{ error?: stri
         access_token: item.access_token,
         cursor,
       });
-      const { added, modified, removed, next_cursor, has_more, transactions_update_status } = response.data;
-
-      // TEMPORARY diagnostic logging — remove once the zero-transactions
-      // issue is resolved. transactions_update_status in particular
-      // matters: Plaid sandbox items can report NOT_READY or
-      // INITIAL_UPDATE_COMPLETE while still populating; syncing before
-      // that finishes can legitimately return empty added/modified.
-      console.log("[plaid sync] item:", plaidItemId, {
-        added: added.length,
-        modified: modified.length,
-        removed: removed.length,
-        has_more,
-        transactions_update_status,
-        request_id: (response.data as any).request_id,
-      });
-
+      const { added, modified, removed, next_cursor, has_more } = response.data;
       fetchedFromPlaid += added.length + modified.length;
 
       const upsertRows = [...added, ...modified]
@@ -364,6 +355,7 @@ export async function syncPlaidItem(plaidItemId: string): Promise<{ error?: stri
             unmatchedAccountIds.add(txn.account_id); // Account not yet imported — skip for now.
             return null;
           }
+          affectedAccounts.set(mapped.id, { entityId: mapped.entityId });
           return {
             entity_id: mapped.entityId,
             account_id: mapped.id,
@@ -417,6 +409,26 @@ export async function syncPlaidItem(plaidItemId: string): Promise<{ error?: stri
       .from("plaid_items")
       .update({ cursor, last_synced_at: new Date().toISOString() })
       .eq("id", plaidItemId);
+
+    // Keeps reconciliation status/close-checklist numbers fresh without
+    // the app-wide loop this replaced — scoped to only the handful of
+    // accounts (usually one) that actually received something this run,
+    // not every account in the org on every page view.
+    for (const [accountId, { entityId }] of affectedAccounts.entries()) {
+      try {
+        const reconciliationId = await getOrCreateReconciliationPeriod(
+          entityId,
+          accountId,
+          new Date().toISOString(),
+          membership.userId
+        );
+        await recomputeReconciliationStatus(reconciliationId);
+      } catch (recomputeErr) {
+        // Best-effort — the sync itself already succeeded and shouldn't
+        // fail because a downstream status recompute hiccuped.
+        console.error("Post-sync reconciliation recompute failed:", recomputeErr);
+      }
+    }
 
     if (jobRow) {
       await supabase

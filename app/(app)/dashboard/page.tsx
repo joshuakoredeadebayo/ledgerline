@@ -1,7 +1,6 @@
 import { AlertTriangle, ClipboardCheck, GitMerge } from "lucide-react";
 import { getCurrentMembership } from "@/lib/actions/membership";
 import { createClient } from "@/lib/supabase/server";
-import { getOrCreateReconciliationPeriod, recomputeReconciliationStatus } from "@/lib/reconciliation-status";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/shared/empty-state";
 
@@ -9,25 +8,15 @@ export default async function DashboardPage() {
   const membership = await getCurrentMembership();
   const supabase = await createClient();
 
-  // Refresh every account's reconciliation status across the org before
-  // reading the counts below — otherwise these numbers only reflect
-  // whatever was last true the moment someone happened to open that
-  // specific account's reconciliation page, not the current truth.
-  if (membership) {
-    const { data: entities } = await supabase.from("entities").select("id").eq("organization_id", membership.organizationId);
-    for (const entity of entities ?? []) {
-      const { data: accounts } = await supabase.from("accounts").select("id").eq("entity_id", entity.id);
-      for (const account of accounts ?? []) {
-        const reconciliationId = await getOrCreateReconciliationPeriod(
-          entity.id,
-          account.id,
-          new Date().toISOString(),
-          membership.userId
-        );
-        await recomputeReconciliationStatus(reconciliationId);
-      }
-    }
-  }
+  // Deliberately just reads current data here — this page used to loop
+  // over every account in the org and fully recompute reconciliation
+  // status on every single view, which meant visiting the dashboard was
+  // one of the most expensive things you could do in the app (worse the
+  // more accounts you had). Freshness now comes from the actual events
+  // that change these numbers — confirming/rejecting a match (already
+  // triggers a recompute in lib/actions/reconciliation.ts) and syncing
+  // new transactions (triggers one in lib/actions/plaid.ts) — rather
+  // than from merely looking at a page.
 
   const { count: openExceptions } = await supabase
     .from("exceptions")
