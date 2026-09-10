@@ -118,3 +118,105 @@ export async function getCompanyInfo(realmId: string, accessToken: string): Prom
   const data = await response.json();
   return { companyName: data.CompanyInfo?.CompanyName ?? "QuickBooks Company" };
 }
+
+// Maps QuickBooks' chart-of-accounts AccountType values onto
+// Ledgerline's five buckets, the same role mapPlaidTypeToAccountType
+// plays for Plaid accounts in lib/actions/plaid.ts.
+export function mapQuickBooksAccountType(qbAccountType: string): "asset" | "liability" | "equity" | "revenue" | "expense" {
+  switch (qbAccountType) {
+    case "Bank":
+    case "Other Current Asset":
+    case "Fixed Asset":
+    case "Other Asset":
+    case "Accounts Receivable":
+      return "asset";
+    case "Accounts Payable":
+    case "Credit Card":
+    case "Other Current Liability":
+    case "Long Term Liability":
+      return "liability";
+    case "Equity":
+      return "equity";
+    case "Income":
+    case "Other Income":
+      return "revenue";
+    case "Expense":
+    case "Other Expense":
+    case "Cost of Goods Sold":
+      return "expense";
+    default:
+      return "asset";
+  }
+}
+
+/**
+ * Runs a query against QuickBooks' SQL-like Query API
+ * (https://developer.intuit.com/.../query). Used for both the chart
+ * of accounts and transaction pulls, since QuickBooks — unlike Plaid —
+ * has no single unified "transactions" endpoint; each transaction
+ * type (Purchase, Deposit, etc.) is its own queryable resource.
+ */
+export async function queryQuickBooks<T = any>(realmId: string, accessToken: string, query: string): Promise<T[]> {
+  const response = await fetch(
+    `${apiBaseUrl()}/v3/company/${realmId}/query?query=${encodeURIComponent(query)}&minorversion=75`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/json",
+      },
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`QuickBooks query failed: ${response.status} ${await response.text()}`);
+  }
+
+  const data = await response.json();
+  // QueryResponse's key varies by entity — e.g. QueryResponse.Account,
+  // QueryResponse.Purchase — so pull whichever array key is present
+  // rather than requiring the caller to know QuickBooks' exact naming.
+  const queryResponse = data.QueryResponse ?? {};
+  const arrayKey = Object.keys(queryResponse).find((k) => Array.isArray(queryResponse[k]));
+  return arrayKey ? queryResponse[arrayKey] : [];
+}
+
+export interface QuickBooksItemRow {
+  id: string;
+  realm_id: string;
+  access_token: string;
+  refresh_token: string;
+  access_token_expires_at: string;
+}
+
+/**
+ * Returns a valid access token for this connection, refreshing and
+ * persisting a new one first if the current one is expired or close
+ * to it. Every QuickBooks action (account import, transaction sync)
+ * needs this, since access tokens only last about an hour — unlike
+ * Plaid's, which don't expire the same way.
+ */
+export async function getValidAccessToken(
+  item: QuickBooksItemRow,
+  supabase: Awaited<ReturnType<typeof import("@/lib/supabase/server").createClient>>
+): Promise<string> {
+  const expiresAt = new Date(item.access_token_expires_at).getTime();
+  const fiveMinutes = 5 * 60 * 1000;
+
+  if (expiresAt - Date.now() > fiveMinutes) {
+    return item.access_token;
+  }
+
+  const tokens = await refreshQuickBooksTokens(item.refresh_token);
+  const newExpiresAt = new Date(Date.now() + tokens.expiresIn * 1000).toISOString();
+
+  await supabase
+    .from("quickbooks_items")
+    .update({
+      access_token: tokens.accessToken,
+      refresh_token: tokens.refreshToken,
+      access_token_expires_at: newExpiresAt,
+    })
+    .eq("id", item.id);
+
+  return tokens.accessToken;
+}
