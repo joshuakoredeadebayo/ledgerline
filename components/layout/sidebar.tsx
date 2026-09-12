@@ -56,7 +56,7 @@ export function Sidebar({ role }: { role: Role }) {
 
       <div className="border-t border-ink-100 p-3">
         <Link
-          href="/settings/organization"
+          href="/settings/integrations"
           className={cn(
             "flex items-center gap-2.5 rounded px-3 py-2 text-sm font-medium transition-colors",
             pathname.startsWith("/settings") ? "bg-accent-50 text-accent-700" : "text-ink-600 hover:bg-ink-50 hover:text-ink-900"
