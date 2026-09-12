@@ -126,6 +126,34 @@ export async function importQuickBooksAccounts(entityId: string): Promise<{ erro
 
   for (const qbAccount of qbAccounts) {
     const accountType = mapQuickBooksAccountType(qbAccount.AccountType);
+    // Only actual bank/card accounts get matched against a real
+    // statement — income, expense, COGS, equity, and even AR/AP (which
+    // reconcile via aging reports, not bank matching) shouldn't clutter
+    // the Reconciliation workspace with accounts that will always sit
+    // at "all clear" because nothing ever posts to them from a feed.
+    const isReconcilable = qbAccount.AccountType === "Bank" || qbAccount.AccountType === "Credit Card";
+
+    const { data: existingAccount } = await supabase
+      .from("accounts")
+      .select("id")
+      .eq("entity_id", entityId)
+      .eq("quickbooks_account_id", qbAccount.Id)
+      .maybeSingle();
+
+    if (existingAccount) {
+      // Re-importing an already-linked account — refresh name/type/
+      // reconcilable flag to stay in sync with QuickBooks, but never
+      // touch `code`, since that's meant to be a stable reference once
+      // assigned.
+      const { error } = await supabase
+        .from("accounts")
+        .update({ name: qbAccount.Name, account_type: accountType, is_reconcilable: isReconcilable })
+        .eq("id", existingAccount.id);
+      if (error) return { error: error.message };
+      importedCount++;
+      continue;
+    }
+
     const MAX_ATTEMPTS = 3;
     let created = false;
     let lastError: string | null = null;
@@ -138,7 +166,7 @@ export async function importQuickBooksAccounts(entityId: string): Promise<{ erro
         name: qbAccount.Name,
         account_type: accountType,
         code,
-        is_reconcilable: true,
+        is_reconcilable: isReconcilable,
         source: "quickbooks",
         quickbooks_account_id: qbAccount.Id,
         quickbooks_item_id: item.id,
