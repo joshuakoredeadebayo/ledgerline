@@ -195,6 +195,7 @@ export async function importQuickBooksAccounts(entityId: string): Promise<{ erro
   }
 
   revalidatePath(`/entities/${entityId}`);
+  revalidatePath("/reconciliation");
   return { importedCount };
 }
 
