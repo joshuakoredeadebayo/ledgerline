@@ -11,6 +11,8 @@ import { ConnectBankButton } from "@/components/plaid/connect-bank-button";
 import { SyncTransactionsButton } from "@/components/plaid/sync-transactions-button";
 import { ImportQuickBooksAccountsButton } from "@/components/quickbooks/import-accounts-button";
 import { SyncQuickBooksButton } from "@/components/quickbooks/sync-quickbooks-button";
+import { LinkAccountsForm } from "@/components/accounts/link-accounts-form";
+import { getLinkableAccounts } from "@/lib/actions/account-linking";
 
 export default async function EntityDetailPage({ params }: { params: Promise<{ entityId: string }> }) {
   const { entityId } = await params;
@@ -26,6 +28,7 @@ export default async function EntityDetailPage({ params }: { params: Promise<{ e
   const canManage = membership ? can(membership.role, "entities.manage") : false;
   const hasPlaidAccounts = (accounts ?? []).some((a) => a.source === "plaid");
   const hasQuickBooksAccounts = (accounts ?? []).some((a) => a.source === "quickbooks");
+  const linkableAccounts = canManage ? await getLinkableAccounts(entityId) : [];
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div>
@@ -42,6 +45,7 @@ export default async function EntityDetailPage({ params }: { params: Promise<{ e
           {hasQuickBooksAccounts && <SyncQuickBooksButton entityId={entity.id} />}
         </div>
       )}
+      {canManage && <LinkAccountsForm entityId={entity.id} accounts={linkableAccounts} />}
       {accounts && accounts.length > 0 ? (
         <Table>
           <TableHead>
