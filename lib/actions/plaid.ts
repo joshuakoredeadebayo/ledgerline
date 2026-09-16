@@ -5,7 +5,6 @@ import { CountryCode, Products } from "plaid";
 import { plaidClient } from "@/lib/plaid/client";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentMembership } from "@/lib/actions/membership";
-import { getOrCreateReconciliationPeriod, recomputeReconciliationStatus } from "@/lib/reconciliation-status";
 import { assertPermission } from "@/lib/permissions";
 
 export type PlaidActionState =
@@ -154,6 +153,7 @@ export async function exchangePublicToken(publicToken: string, presetEntityId?: 
     await syncPlaidItem(plaidItem.id).catch(() => {});
     revalidatePath(`/entities/${presetEntityId}`);
     revalidatePath("/reconciliation");
+    revalidatePath("/dashboard");
     return { success: true };
   }
 
@@ -173,6 +173,7 @@ export async function exchangePublicToken(publicToken: string, presetEntityId?: 
     await syncPlaidItem(plaidItem.id).catch(() => {});
     revalidatePath("/entities");
     revalidatePath("/reconciliation");
+    revalidatePath("/dashboard");
     return { success: true };
   }
 
@@ -265,6 +266,7 @@ export async function assignPlaidAccountsToEntities(
 
   revalidatePath("/entities");
   revalidatePath("/reconciliation");
+    revalidatePath("/dashboard");
   return { success: true };
 }
 
@@ -331,12 +333,6 @@ export async function syncPlaidItem(plaidItemId: string): Promise<{ error?: stri
   let syncedCount = 0;
   let fetchedFromPlaid = 0;
   const unmatchedAccountIds = new Set<string>();
-  // Only accounts that actually received an added/modified transaction
-  // this run — used below to trigger a scoped reconciliation recompute,
-  // rather than the org-wide "recompute everything on every page view"
-  // pattern that was removed from dashboard/close pages for being the
-  // single biggest source of app-wide slowness.
-  const affectedAccounts = new Map<string, { entityId: string }>();
 
   try {
     let hasMore = true;
@@ -355,7 +351,6 @@ export async function syncPlaidItem(plaidItemId: string): Promise<{ error?: stri
             unmatchedAccountIds.add(txn.account_id); // Account not yet imported — skip for now.
             return null;
           }
-          affectedAccounts.set(mapped.id, { entityId: mapped.entityId });
           return {
             entity_id: mapped.entityId,
             account_id: mapped.id,
@@ -410,26 +405,6 @@ export async function syncPlaidItem(plaidItemId: string): Promise<{ error?: stri
       .update({ cursor, last_synced_at: new Date().toISOString() })
       .eq("id", plaidItemId);
 
-    // Keeps reconciliation status/close-checklist numbers fresh without
-    // the app-wide loop this replaced — scoped to only the handful of
-    // accounts (usually one) that actually received something this run,
-    // not every account in the org on every page view.
-    for (const [accountId, { entityId }] of affectedAccounts.entries()) {
-      try {
-        const reconciliationId = await getOrCreateReconciliationPeriod(
-          entityId,
-          accountId,
-          new Date().toISOString(),
-          membership.userId
-        );
-        await recomputeReconciliationStatus(reconciliationId);
-      } catch (recomputeErr) {
-        // Best-effort — the sync itself already succeeded and shouldn't
-        // fail because a downstream status recompute hiccuped.
-        console.error("Post-sync reconciliation recompute failed:", recomputeErr);
-      }
-    }
-
     if (jobRow) {
       await supabase
         .from("sync_jobs")
@@ -438,6 +413,7 @@ export async function syncPlaidItem(plaidItemId: string): Promise<{ error?: stri
     }
 
     revalidatePath("/reconciliation");
+    revalidatePath("/dashboard");
     return { syncedCount, fetchedFromPlaid, unmatchedAccountIds: [...unmatchedAccountIds] };
   } catch (err: any) {
     const message = err?.message ?? "Sync failed unexpectedly.";
@@ -488,6 +464,7 @@ export async function syncEntityPlaidItems(entityId: string): Promise<{ error?: 
 
   revalidatePath(`/entities/${entityId}`);
   revalidatePath("/reconciliation");
+    revalidatePath("/dashboard");
   return { syncedCount: total, fetchedFromPlaid: totalFetched, unmatchedAccountIds: [...allUnmatched] };
 }
 

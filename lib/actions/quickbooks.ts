@@ -196,6 +196,7 @@ export async function importQuickBooksAccounts(entityId: string): Promise<{ erro
 
   revalidatePath(`/entities/${entityId}`);
   revalidatePath("/reconciliation");
+    revalidatePath("/dashboard");
   return { importedCount };
 }
 
@@ -335,6 +336,7 @@ export async function syncQuickBooksTransactions(
 
     revalidatePath(`/entities/${entityId}`);
     revalidatePath("/reconciliation");
+    revalidatePath("/dashboard");
     return { syncedCount, fetchedFromQuickBooks, unmatchedAccountIds: [...unmatchedAccountIds] };
   } catch (err: any) {
     return { error: err?.message ?? "QuickBooks sync failed unexpectedly." };

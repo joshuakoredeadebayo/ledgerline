@@ -199,5 +199,6 @@ export async function linkAccounts(
 
   revalidatePath(`/entities/${entityId}`);
   revalidatePath("/reconciliation");
+  revalidatePath("/dashboard");
   return {};
 }
