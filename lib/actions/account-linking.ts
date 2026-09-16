@@ -101,6 +101,22 @@ export async function linkAccounts(
     mergedFields[field] = primaryValue ?? secondaryValue ?? null;
   }
 
+  // Clear the fields we're about to move onto primary from secondary
+  // FIRST — writing them to primary while secondary still holds the
+  // same values would momentarily duplicate a unique (entity_id,
+  // plaid_account_id)/(entity_id, quickbooks_account_id) pair, which
+  // is exactly what caused the constraint violation this fixes.
+  const clearFromSecondary: Record<string, null> = {};
+  for (const field of EXTERNAL_ID_FIELDS) {
+    if ((secondary as any)[field] && (secondary as any)[field] === mergedFields[field]) {
+      clearFromSecondary[field] = null;
+    }
+  }
+  if (Object.keys(clearFromSecondary).length > 0) {
+    const { error: clearError } = await supabase.from("accounts").update(clearFromSecondary).eq("id", secondaryAccountId);
+    if (clearError) return { error: clearError.message };
+  }
+
   const { error: updateAccountError } = await supabase.from("accounts").update(mergedFields).eq("id", primaryAccountId);
   if (updateAccountError) return { error: updateAccountError.message };
 
