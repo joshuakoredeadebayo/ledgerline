@@ -135,16 +135,25 @@ export async function importQuickBooksAccounts(entityId: string): Promise<{ erro
 
     const { data: existingAccount } = await supabase
       .from("accounts")
-      .select("id")
+      .select("id, plaid_account_id")
       .eq("entity_id", entityId)
       .eq("quickbooks_account_id", qbAccount.Id)
       .maybeSingle();
 
     if (existingAccount) {
-      // Re-importing an already-linked account — refresh name/type/
-      // reconcilable flag to stay in sync with QuickBooks, but never
-      // touch `code`, since that's meant to be a stable reference once
-      // assigned.
+      if (existingAccount.plaid_account_id) {
+        // This account has been merged with a Plaid account via "Link
+        // accounts" — its name/type are now user-decided, not just a
+        // mirror of QuickBooks. Overwriting them here on every re-import
+        // would silently undo that linking work. Still counts as
+        // "imported" since the account itself is correctly in sync.
+        importedCount++;
+        continue;
+      }
+      // Re-importing an already-linked (but not merged) account —
+      // refresh name/type/reconcilable flag to stay in sync with
+      // QuickBooks, but never touch `code`, since that's meant to be a
+      // stable reference once assigned.
       const { error } = await supabase
         .from("accounts")
         .update({ name: qbAccount.Name, account_type: accountType, is_reconcilable: isReconcilable })
