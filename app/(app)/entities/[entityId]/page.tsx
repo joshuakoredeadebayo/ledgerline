@@ -22,7 +22,7 @@ export default async function EntityDetailPage({ params }: { params: Promise<{ e
   if (!entity) notFound();
   const { data: accounts } = await supabase
     .from("accounts")
-    .select("id, name, code, account_type, is_reconcilable, source")
+    .select("id, name, code, account_type, is_reconcilable, source, plaid_account_id, quickbooks_account_id")
     .eq("entity_id", entityId)
     .order("account_type");
   const canManage = membership ? can(membership.role, "entities.manage") : false;
@@ -63,7 +63,11 @@ export default async function EntityDetailPage({ params }: { params: Promise<{ e
                 <TableCell className="font-medium">{account.name}</TableCell>
                 <TableCell>{account.code ?? "—"}</TableCell>
                 <TableCell className="capitalize">{account.account_type}</TableCell>
-                <TableCell className="capitalize">{account.source ?? "manual"}</TableCell>
+                <TableCell className="capitalize">
+                  {account.plaid_account_id && account.quickbooks_account_id
+                    ? "Plaid + QuickBooks"
+                    : account.source ?? "manual"}
+                </TableCell>
                 <TableCell>
                   <Badge status={account.is_reconcilable ? "info" : "neutral"} label={account.is_reconcilable ? "Enabled" : "Off"} />
                 </TableCell>
