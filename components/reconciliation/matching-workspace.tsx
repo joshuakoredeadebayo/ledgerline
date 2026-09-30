@@ -1,13 +1,13 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { Check, X, GitMerge } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeaderCell, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { ConfidenceScore } from "@/components/reconciliation/confidence-score";
 import { EmptyState } from "@/components/shared/empty-state";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { confirmMatch, rejectMatch } from "@/lib/actions/reconciliation";
+import { confirmMatch, rejectMatch, createManualMatch } from "@/lib/actions/reconciliation";
 
 interface TxnRow {
   id: string;
@@ -28,18 +28,36 @@ interface ExistingMatch {
 
 export function MatchingWorkspace({
   accountId,
+  entityId,
   currency,
   existingMatches,
+  unmatchedBank,
+  unmatchedLedger,
   canMatch,
 }: {
   accountId: string;
+  entityId: string;
   currency: string;
   existingMatches: ExistingMatch[];
+  unmatchedBank: TxnRow[];
+  unmatchedLedger: TxnRow[];
   canMatch: boolean;
 }) {
   const [isPending, startTransition] = useTransition();
+  const [selectedBankId, setSelectedBankId] = useState<string | null>(null);
+  const [selectedLedgerId, setSelectedLedgerId] = useState<string | null>(null);
 
   const hasSuggestions = existingMatches.length > 0;
+  const hasUnmatched = unmatchedBank.length > 0 || unmatchedLedger.length > 0;
+
+  const handleManualMatch = () => {
+    if (!selectedBankId || !selectedLedgerId) return;
+    startTransition(async () => {
+      await createManualMatch(entityId, accountId, selectedBankId, selectedLedgerId);
+      setSelectedBankId(null);
+      setSelectedLedgerId(null);
+    });
+  };
 
   return (
     <div className="space-y-8">
@@ -84,13 +102,96 @@ export function MatchingWorkspace({
         </section>
       )}
 
-      {!hasSuggestions && (
+      {hasUnmatched && (
+        <section>
+          <h2 className="mb-1 text-sm font-semibold text-ink-700">Unmatched transactions</h2>
+          <p className="mb-3 text-sm text-ink-500">
+            No suggested pairing was found for these — select one from each side to match them manually.
+          </p>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <UnmatchedList
+              label="Bank"
+              txns={unmatchedBank}
+              currency={currency}
+              selectedId={selectedBankId}
+              onSelect={canMatch ? setSelectedBankId : undefined}
+            />
+            <UnmatchedList
+              label="Ledger"
+              txns={unmatchedLedger}
+              currency={currency}
+              selectedId={selectedLedgerId}
+              onSelect={canMatch ? setSelectedLedgerId : undefined}
+            />
+          </div>
+          {canMatch && (
+            <div className="mt-3">
+              <Button
+                size="sm"
+                onClick={handleManualMatch}
+                disabled={!selectedBankId || !selectedLedgerId || isPending}
+              >
+                <GitMerge className="h-3.5 w-3.5" />
+                Match selected
+              </Button>
+            </div>
+          )}
+        </section>
+      )}
+
+      {!hasSuggestions && !hasUnmatched && (
         <EmptyState
           icon={<GitMerge className="h-8 w-8" />}
           title="Nothing to match right now"
           description="Once transactions sync from your bank and ledger, unmatched items and suggestions will show up here."
         />
       )}
+    </div>
+  );
+}
+
+function UnmatchedList({
+  label,
+  txns,
+  currency,
+  selectedId,
+  onSelect,
+}: {
+  label: string;
+  txns: TxnRow[];
+  currency: string;
+  selectedId: string | null;
+  onSelect?: (id: string) => void;
+}) {
+  return (
+    <div className="rounded-md border border-ink-100">
+      <div className="border-b border-ink-100 bg-ink-50 px-3 py-2 text-xs font-medium uppercase tracking-wide text-ink-500">
+        {label} ({txns.length})
+      </div>
+      <div className="max-h-72 overflow-y-auto">
+        {txns.length === 0 && <p className="p-3 text-sm text-ink-400">None unmatched.</p>}
+        {txns.map((txn) => {
+          const isSelected = txn.id === selectedId;
+          return (
+            <button
+              key={txn.id}
+              type="button"
+              disabled={!onSelect}
+              onClick={() => onSelect?.(txn.id)}
+              className={`flex w-full flex-col border-b border-ink-50 px-3 py-2 text-left last:border-b-0 ${
+                isSelected ? "bg-accent-50" : "hover:bg-ink-50"
+              } ${!onSelect ? "cursor-default" : "cursor-pointer"}`}
+            >
+              <span className="font-medium tabular-nums text-ink-900">
+                {formatCurrency(txn.amount, txn.currency ?? currency)}
+              </span>
+              <span className="text-xs text-ink-500">
+                {formatDate(txn.transaction_date)} · {txn.description ?? "No description"}
+              </span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

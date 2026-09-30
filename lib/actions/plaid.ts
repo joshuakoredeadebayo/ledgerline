@@ -1,3 +1,4 @@
+
 "use server";
 
 import { revalidatePath } from "next/cache";
@@ -22,6 +23,7 @@ export type PendingAccount = {
   name: string;
   accountType: "asset" | "liability" | "equity" | "revenue" | "expense";
   mask: string | null;
+  isReconcilable: boolean;
 };
 
 // Maps Plaid's account type/subtype vocabulary onto Ledgerline's five
@@ -39,6 +41,19 @@ function mapPlaidTypeToAccountType(plaidType: string): PendingAccount["accountTy
     default:
       return "asset";
   }
+}
+
+// Only "depository" (checking/savings) and "credit" (credit cards) are
+// real bank/card accounts you'd get a statement for and reconcile
+// against a feed. "investment" (401k, IRA) and "loan" (mortgage, auto
+// loan, student loan) accounts previously all got is_reconcilable:true
+// unconditionally too, which is what flooded the "Link accounts"
+// dropdown with accounts that should never be link candidates in the
+// first place. Note: Plaid's categorization of a couple of edge
+// subtypes (HSA, HELOC) can vary by institution — worth a manual spot
+// check if one of those looks miscategorized after this change.
+function isPlaidTypeReconcilable(plaidType: string): boolean {
+  return plaidType === "depository" || plaidType === "credit";
 }
 
 /**
@@ -139,6 +154,7 @@ export async function exchangePublicToken(publicToken: string, presetEntityId?: 
     name: a.name,
     accountType: mapPlaidTypeToAccountType(a.type),
     mask: a.mask ?? null,
+    isReconcilable: isPlaidTypeReconcilable(a.type),
   }));
 
   // If the connection was started from a specific entity's own page,
@@ -207,7 +223,7 @@ async function createAccountsForEntity(
         name: account.name,
         account_type: account.accountType,
         code,
-        is_reconcilable: true,
+        is_reconcilable: account.isReconcilable,
         source: "plaid",
         plaid_account_id: account.plaidAccountId,
         plaid_item_id: plaidItemId,
@@ -250,10 +266,38 @@ export async function assignPlaidAccountsToEntities(
 
   assertPermission(membership.role, "entities.manage");
 
+  const supabase = await createClient();
+
+  // The client only sent the mapped accountType bucket (asset/
+  // liability/...), which loses whether the original Plaid type was
+  // depository/credit vs. investment/loan — exactly the distinction
+  // is_reconcilable needs. Re-fetching from Plaid directly, rather
+  // than trusting anything the client sent, keeps this consistent
+  // with the single-entity path above.
+  const { data: item } = await supabase.from("plaid_items").select("access_token").eq("id", plaidItemId).single();
+  const reconcilableByPlaidAccountId = new Map<string, boolean>();
+  if (item) {
+    try {
+      const accountsResponse = await plaidClient.accountsGet({ access_token: item.access_token });
+      for (const a of accountsResponse.data.accounts) {
+        reconcilableByPlaidAccountId.set(a.account_id, isPlaidTypeReconcilable(a.type));
+      }
+    } catch {
+      // Best-effort — if this fails, accounts fall back to
+      // not-reconcilable below rather than blocking the whole import.
+    }
+  }
+
   const byEntity = new Map<string, PendingAccount[]>();
   for (const a of assignments) {
     const list = byEntity.get(a.entityId) ?? [];
-    list.push({ plaidAccountId: a.plaidAccountId, name: a.name, accountType: a.accountType, mask: null });
+    list.push({
+      plaidAccountId: a.plaidAccountId,
+      name: a.name,
+      accountType: a.accountType,
+      mask: null,
+      isReconcilable: reconcilableByPlaidAccountId.get(a.plaidAccountId) ?? false,
+    });
     byEntity.set(a.entityId, list);
   }
 

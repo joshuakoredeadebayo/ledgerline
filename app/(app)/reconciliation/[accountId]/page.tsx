@@ -75,6 +75,33 @@ export default async function MatchingWorkspacePage({
     .eq("reconciliation_id", periodSummary?.id ?? "")
     .eq("status", "pending_review");
 
+  // Raw unmatched transactions the matching engine found no plausible
+  // suggestion for — these never appeared in the workspace before,
+  // even though the Reconciliation list page's "unmatched" count
+  // includes them. Scoped to the current period's date range, split by
+  // side the same way recomputeReconciliationStatus classifies them
+  // (source === "plaid" → bank; manual entries carry their side in
+  // raw_payload; everything else, including QuickBooks, → ledger).
+  const { data: unmatchedRaw } = await supabase
+    .from("transactions")
+    .select("id, amount, currency, transaction_date, description, source, raw_payload")
+    .eq("account_id", accountId)
+    .eq("status", "unmatched")
+    .gte("transaction_date", periodSummary?.period_start ?? "1970-01-01")
+    .lte("transaction_date", periodSummary?.period_end ?? "2999-12-31")
+    .order("transaction_date", { ascending: false });
+
+  const sideOf = (t: { source: string; raw_payload: any }): "bank" | "ledger" => {
+    if (t.source === "plaid") return "bank";
+    if (t.source === "manual" && (t.raw_payload?.side === "bank" || t.raw_payload?.side === "ledger")) {
+      return t.raw_payload.side;
+    }
+    return "ledger";
+  };
+
+  const unmatchedBank = (unmatchedRaw ?? []).filter((t: any) => sideOf(t) === "bank");
+  const unmatchedLedger = (unmatchedRaw ?? []).filter((t: any) => sideOf(t) === "ledger");
+
   const canMatch = membership ? can(membership.role, "reconciliation.match") : false;
   const canFinalize = membership ? can(membership.role, "reconciliation.finalize") : false;
 
@@ -113,8 +140,11 @@ export default async function MatchingWorkspacePage({
 
       <MatchingWorkspace
         accountId={accountId}
+        entityId={account.entity_id}
         currency={entity?.currency ?? "USD"}
         existingMatches={(existingMatches ?? []) as any}
+        unmatchedBank={unmatchedBank as any}
+        unmatchedLedger={unmatchedLedger as any}
         canMatch={canMatch && periodSummary?.status !== "finalized"}
       />
 
