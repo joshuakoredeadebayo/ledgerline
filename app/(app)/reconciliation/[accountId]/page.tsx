@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentMembership } from "@/lib/actions/membership";
 import { can } from "@/lib/permissions";
@@ -8,6 +8,7 @@ import { getOrCreateReconciliationPeriod, recomputeReconciliationStatus } from "
 import { MatchingWorkspace } from "@/components/reconciliation/matching-workspace";
 import { AddManualTransactionForm } from "@/components/reconciliation/add-manual-transaction-form";
 import { PeriodSummary } from "@/components/reconciliation/period-summary";
+import { PeriodNavigator } from "@/components/reconciliation/period-navigator";
 
 export default async function MatchingWorkspacePage({
   params,
@@ -21,15 +22,35 @@ export default async function MatchingWorkspacePage({
   // Optional ?period=YYYY-MM selects which month to review; anything
   // missing or malformed falls back to the current month. Midday on the
   // 15th keeps month-boundary maths safe from timezone shifts.
-  const periodDate = /^\d{4}-(0[1-9]|1[0-2])$/.test(period ?? "")
-    ? `${period}-15T12:00:00.000Z`
-    : new Date().toISOString();
+  let periodDate: string;
+  if (/^\d{4}-(0[1-9]|1[0-2])$/.test(period ?? "")) {
+    periodDate = `${period}-15T12:00:00.000Z`;
+  } else {
+    periodDate = new Date().toISOString();
+  }
   const membership = await getCurrentMembership();
   // Cast to `any`: this page now also queries the `reconciliations` table,
   // which won't exist in types/database.ts until it's regenerated
   // (`supabase gen types typescript --linked`) — without this cast, the
   // periodSummary query below fails to type-check against stale types.
   const supabase = (await createClient()) as any;
+
+  // No explicit ?period: open the month of this account's most recent
+  // transaction (so an account whose activity ended last month doesn't
+  // land on an empty current month), falling back to the current month
+  // when the account has no transactions at all.
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(period ?? "")) {
+    const { data: latest } = await supabase
+      .from("transactions")
+      .select("transaction_date")
+      .eq("account_id", accountId)
+      .order("transaction_date", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (latest?.transaction_date) {
+      periodDate = `${String(latest.transaction_date).slice(0, 7)}-15T12:00:00.000Z`;
+    }
+  }
 
   const { data: account } = await supabase
     .from("accounts")
@@ -123,15 +144,18 @@ export default async function MatchingWorkspacePage({
   const accountCurrency =
     [...currencyCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? entity?.currency ?? "USD";
 
-  // Previous/next month links for the period navigator.
-  const shiftMonth = (isoDate: string, delta: number) => {
-    const year = Number(isoDate.slice(0, 4));
-    const month = Number(isoDate.slice(5, 7));
-    return new Date(Date.UTC(year, month - 1 + delta, 1)).toISOString().slice(0, 7);
-  };
+  // Transactions per month for this account, so the period navigator can
+  // show which months actually have activity.
+  const { data: activityRows } = await supabase
+    .from("transactions")
+    .select("transaction_date")
+    .eq("account_id", accountId);
+  const activity: Record<string, number> = {};
+  for (const row of activityRows ?? []) {
+    const month = String(row.transaction_date).slice(0, 7);
+    activity[month] = (activity[month] ?? 0) + 1;
+  }
   const currentMonth = new Date().toISOString().slice(0, 7);
-  const prevMonth = periodSummary ? shiftMonth(periodSummary.period_start, -1) : null;
-  const nextMonth = periodSummary ? shiftMonth(periodSummary.period_start, 1) : null;
 
   const sideOf = (t: { source: string; raw_payload: any }): "bank" | "ledger" => {
     if (t.source === "plaid") return "bank";
@@ -161,19 +185,13 @@ export default async function MatchingWorkspacePage({
         </p>
       </div>
 
-      {periodSummary && prevMonth && nextMonth && (
-        <div className="flex items-center gap-3 text-sm">
-          <Link href={`/reconciliation/${accountId}?period=${prevMonth}`} className="inline-flex items-center gap-1 text-ink-500 hover:text-ink-800">
-            <ChevronLeft className="h-3.5 w-3.5" />
-            {prevMonth}
-          </Link>
-          {nextMonth <= currentMonth && (
-            <Link href={`/reconciliation/${accountId}?period=${nextMonth}`} className="inline-flex items-center gap-1 text-ink-500 hover:text-ink-800">
-              {nextMonth}
-              <ChevronRight className="h-3.5 w-3.5" />
-            </Link>
-          )}
-        </div>
+      {periodSummary && (
+        <PeriodNavigator
+          accountId={accountId}
+          selectedMonth={periodSummary.period_start.slice(0, 7)}
+          currentMonth={currentMonth}
+          activity={activity}
+        />
       )}
 
       {mixedCurrencies && (

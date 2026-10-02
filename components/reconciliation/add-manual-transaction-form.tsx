@@ -37,8 +37,8 @@ export function AddManualTransactionForm({ accountId, entityId }: { accountId: s
           <option value="ledger">Ledger</option>
         </select>
       </div>
-      <div className="w-32">
-        <Input name="amount" type="number" step="0.01" label="Amount" placeholder="150.00" required />
+      <div className="w-56">
+        <Input name="amount" type="number" step="0.01" label="Amount" placeholder="150.00" hint="Positive = money out, negative = money in" required />
       </div>
       <div className="w-40">
         <Input name="transaction_date" type="date" label="Date" required />

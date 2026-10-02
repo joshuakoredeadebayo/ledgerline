@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Check, X, GitMerge } from "lucide-react";
+import { AlertTriangle, Check, X, GitMerge } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeaderCell, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { ConfidenceScore } from "@/components/reconciliation/confidence-score";
@@ -49,6 +49,15 @@ export function MatchingWorkspace({
 
   const hasSuggestions = existingMatches.length > 0;
   const hasUnmatched = unmatchedBank.length > 0 || unmatchedLedger.length > 0;
+
+  // Both sides use one sign convention: positive = money leaving the
+  // account, negative = money coming in. Pairing an outflow with an inflow
+  // is almost always a mistake, so warn before allowing it.
+  const selectedBank = unmatchedBank.find((t) => t.id === selectedBankId);
+  const selectedLedger = unmatchedLedger.find((t) => t.id === selectedLedgerId);
+  const oppositeSigns =
+    !!selectedBank && !!selectedLedger && Math.sign(Number(selectedBank.amount)) !== Math.sign(Number(selectedLedger.amount));
+  const directionOf = (t: TxnRow) => (Number(t.amount) < 0 ? "money coming in" : "money going out");
 
   const handleManualMatch = () => {
     if (!selectedBankId || !selectedLedgerId) return;
@@ -125,14 +134,30 @@ export function MatchingWorkspace({
             />
           </div>
           {canMatch && (
-            <div className="mt-3">
+            <div className="mt-3 space-y-3">
+              {oppositeSigns && selectedBank && selectedLedger && (
+                <div
+                  role="alert"
+                  className="flex items-start gap-2 rounded-md border border-status-pending/40 bg-status-pendingBg px-3 py-2 text-sm text-ink-800"
+                >
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-status-pending" />
+                  <p>
+                    <span className="font-medium">Opposite directions.</span> The bank transaction (
+                    {formatCurrency(selectedBank.amount, selectedBank.currency ?? currency)}) is {directionOf(selectedBank)},
+                    but the ledger entry ({formatCurrency(selectedLedger.amount, selectedLedger.currency ?? currency)}) is{" "}
+                    {directionOf(selectedLedger)}. Matching them will usually leave the period out of balance. Check
+                    the sign of the ledger entry before continuing.
+                  </p>
+                </div>
+              )}
               <Button
                 size="sm"
+                variant={oppositeSigns ? "destructive" : "primary"}
                 onClick={handleManualMatch}
                 disabled={!selectedBankId || !selectedLedgerId || isPending}
               >
                 <GitMerge className="h-3.5 w-3.5" />
-                Match selected
+                {oppositeSigns ? "Match anyway" : "Match selected"}
               </Button>
             </div>
           )}
