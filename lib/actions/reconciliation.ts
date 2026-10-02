@@ -214,11 +214,29 @@ export async function addManualTransaction(_prev: ActionState, formData: FormDat
   // (`supabase gen types typescript --linked`). Without this, every query below
   // fails to type-check against the stale generated types.
   const supabase = (await createClient()) as any;
+
+  // Manual entries inherit the account's currency (from any existing
+  // synced transaction), falling back to the entity's — rather than the
+  // column default of USD, which would mislabel entries on non-USD books.
+  const { data: sibling } = await supabase
+    .from("transactions")
+    .select("currency")
+    .eq("account_id", parsed.data.accountId)
+    .neq("source", "manual")
+    .limit(1)
+    .maybeSingle();
+  let manualCurrency: string | null = sibling?.currency ?? null;
+  if (!manualCurrency) {
+    const { data: ent } = await supabase.from("entities").select("currency").eq("id", parsed.data.entityId).single();
+    manualCurrency = ent?.currency ?? "USD";
+  }
+
   const { data: txn, error } = await supabase
     .from("transactions")
     .insert({
       entity_id: parsed.data.entityId,
       account_id: parsed.data.accountId,
+      currency: manualCurrency,
       source: "manual",
       external_id: `manual-${crypto.randomUUID()}`,
       amount: parsed.data.amount,

@@ -20,6 +20,11 @@ export interface SuggestedMatch {
  *   - exact amount + within 7 days     -> 0.65
  *   - amount within 1% + within 3 days -> 0.55
  * Anything below 0.5 isn't suggested at all — surfaced as an exception instead.
+ *
+ * Both sides share one sign convention (positive = money leaving the
+ * account, negative = money coming in), so a bank outflow can only match
+ * a ledger outflow. Opposite-signed pairs are never suggested, even when
+ * the absolute amounts are identical.
  */
 export function suggestMatches(
   bankTxns: MatchCandidate[],
@@ -50,7 +55,10 @@ export function suggestMatches(
 }
 
 function scoreMatch(bank: MatchCandidate, ledger: MatchCandidate): number {
-  const amountDiff = Math.abs(Math.abs(bank.amount) - Math.abs(ledger.amount));
+  // Opposite directions (an inflow vs an outflow) are never the same event.
+  if (Math.sign(bank.amount) !== Math.sign(ledger.amount)) return 0;
+
+  const amountDiff = Math.abs(bank.amount - ledger.amount);
   const amountMatch = amountDiff < 0.01;
   const amountClose = amountDiff / Math.max(Math.abs(bank.amount), 0.01) <= 0.01;
 

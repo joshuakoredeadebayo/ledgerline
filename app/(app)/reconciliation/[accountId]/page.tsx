@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentMembership } from "@/lib/actions/membership";
 import { can } from "@/lib/permissions";
@@ -11,10 +11,19 @@ import { PeriodSummary } from "@/components/reconciliation/period-summary";
 
 export default async function MatchingWorkspacePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ accountId: string }>;
+  searchParams: Promise<{ period?: string }>;
 }) {
   const { accountId } = await params;
+  const { period } = await searchParams;
+  // Optional ?period=YYYY-MM selects which month to review; anything
+  // missing or malformed falls back to the current month. Midday on the
+  // 15th keeps month-boundary maths safe from timezone shifts.
+  const periodDate = /^\d{4}-(0[1-9]|1[0-2])$/.test(period ?? "")
+    ? `${period}-15T12:00:00.000Z`
+    : new Date().toISOString();
   const membership = await getCurrentMembership();
   // Cast to `any`: this page now also queries the `reconciliations` table,
   // which won't exist in types/database.ts until it's regenerated
@@ -52,7 +61,7 @@ export default async function MatchingWorkspacePage({
     const reconciliationId = await getOrCreateReconciliationPeriod(
       account.entity_id,
       accountId,
-      new Date().toISOString(),
+      periodDate,
       membership.userId
     );
     await recomputeReconciliationStatus(reconciliationId);
@@ -91,6 +100,39 @@ export default async function MatchingWorkspacePage({
     .lte("transaction_date", periodSummary?.period_end ?? "2999-12-31")
     .order("transaction_date", { ascending: false });
 
+  // Display currency for this account's totals. Transactions carry their
+  // own currency (Plaid reports it per transaction, USD in sandbox), and
+  // the period totals are plain sums of those amounts — so labelling them
+  // with the *entity's* currency would mislabel them. Use the account's
+  // dominant transaction currency, falling back to the entity's when the
+  // period has no transactions yet, and warn if more than one is present
+  // (no conversion happens, so a mixed total isn't meaningful).
+  const { data: periodCurrencyRows } = await supabase
+    .from("transactions")
+    .select("currency")
+    .eq("account_id", accountId)
+    .gte("transaction_date", periodSummary?.period_start ?? "1970-01-01")
+    .lte("transaction_date", periodSummary?.period_end ?? "2999-12-31");
+
+  const currencyCounts = new Map<string, number>();
+  for (const row of periodCurrencyRows ?? []) {
+    const c = (row.currency as string | null) ?? entity?.currency ?? "USD";
+    currencyCounts.set(c, (currencyCounts.get(c) ?? 0) + 1);
+  }
+  const mixedCurrencies = currencyCounts.size > 1;
+  const accountCurrency =
+    [...currencyCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? entity?.currency ?? "USD";
+
+  // Previous/next month links for the period navigator.
+  const shiftMonth = (isoDate: string, delta: number) => {
+    const year = Number(isoDate.slice(0, 4));
+    const month = Number(isoDate.slice(5, 7));
+    return new Date(Date.UTC(year, month - 1 + delta, 1)).toISOString().slice(0, 7);
+  };
+  const currentMonth = new Date().toISOString().slice(0, 7);
+  const prevMonth = periodSummary ? shiftMonth(periodSummary.period_start, -1) : null;
+  const nextMonth = periodSummary ? shiftMonth(periodSummary.period_start, 1) : null;
+
   const sideOf = (t: { source: string; raw_payload: any }): "bank" | "ledger" => {
     if (t.source === "plaid") return "bank";
     if (t.source === "manual" && (t.raw_payload?.side === "bank" || t.raw_payload?.side === "ledger")) {
@@ -115,8 +157,31 @@ export default async function MatchingWorkspacePage({
         <h1 className="text-2xl font-semibold text-ink-900">{account.name}</h1>
         <p className="mt-1 text-sm text-ink-500">
           {entity?.name} · {entity?.currency}
+          {accountCurrency !== entity?.currency && ` · account in ${accountCurrency}`}
         </p>
       </div>
+
+      {periodSummary && prevMonth && nextMonth && (
+        <div className="flex items-center gap-3 text-sm">
+          <Link href={`/reconciliation/${accountId}?period=${prevMonth}`} className="inline-flex items-center gap-1 text-ink-500 hover:text-ink-800">
+            <ChevronLeft className="h-3.5 w-3.5" />
+            {prevMonth}
+          </Link>
+          {nextMonth <= currentMonth && (
+            <Link href={`/reconciliation/${accountId}?period=${nextMonth}`} className="inline-flex items-center gap-1 text-ink-500 hover:text-ink-800">
+              {nextMonth}
+              <ChevronRight className="h-3.5 w-3.5" />
+            </Link>
+          )}
+        </div>
+      )}
+
+      {mixedCurrencies && (
+        <p className="rounded-md border border-status-pending/30 bg-white px-3 py-2 text-sm text-ink-700">
+          This period contains more than one currency ({[...currencyCounts.keys()].join(", ")}). Amounts are not
+          converted, so the totals below are not a meaningful comparison.
+        </p>
+      )}
 
       {periodSummary && (
         <PeriodSummary
@@ -128,7 +193,7 @@ export default async function MatchingWorkspacePage({
           bookTotal={periodSummary.book_total}
           externalTotal={periodSummary.external_total}
           difference={periodSummary.unexplained_difference}
-          currency={entity?.currency ?? "USD"}
+          currency={accountCurrency}
           finalizedAt={periodSummary.finalized_at}
           canFinalize={canFinalize}
         />
@@ -141,7 +206,7 @@ export default async function MatchingWorkspacePage({
       <MatchingWorkspace
         accountId={accountId}
         entityId={account.entity_id}
-        currency={entity?.currency ?? "USD"}
+        currency={accountCurrency}
         existingMatches={(existingMatches ?? []) as any}
         unmatchedBank={unmatchedBank as any}
         unmatchedLedger={unmatchedLedger as any}
