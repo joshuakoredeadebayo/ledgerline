@@ -13,7 +13,7 @@ export function DashboardPeriodSelect({
 }) {
   const router = useRouter();
   return (
-    <label className="inline-flex items-center gap-2 rounded-md border border-ink-200 bg-white px-3 py-1.5 text-sm text-ink-800">
+    <label className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-800 shadow-subtle">
       <CalendarDays className="h-4 w-4 text-ink-400" />
       <select
         value={value}

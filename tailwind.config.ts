@@ -10,39 +10,40 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Neutral base — ink/paper, not pure black/white (softer, more "professional paper" feel)
+        // Neutral base — a deep navy ink on a cool, very light blue paper.
+        // Matches the approved dashboard mockup (navy text, soft blue-grey surfaces).
         ink: {
-          50: "#f7f8f9",
-          100: "#eceef0",
-          200: "#d7dbe0",
-          300: "#b7bec7",
-          400: "#8f99a6",
-          500: "#6b7684",
-          600: "#525b68",
-          700: "#3f4551",
-          800: "#2b2f38",
-          900: "#1b1e24",
-          950: "#101216",
+          50: "#f5f8fd",
+          100: "#e8eef6",
+          200: "#d9e1ee",
+          300: "#b9c4d9",
+          400: "#8e9bb8",
+          500: "#66759a",
+          600: "#4a5a82",
+          700: "#323f68",
+          800: "#1d2a57",
+          900: "#0f1b4c",
+          950: "#070f33",
         },
-        // Accent — deep, confident indigo-blue. Used sparingly for primary actions & links.
+        // Accent — royal blue from the mockup (logo, bars, progress, links, primary buttons).
         accent: {
-          50: "#eef1fd",
-          100: "#dbe1fb",
-          300: "#98a7f0",
-          500: "#4655d6",
-          600: "#3742b8",
-          700: "#2c3695",
+          50: "#eef2fd",
+          100: "#dbe5fd",
+          300: "#91b0fb",
+          500: "#2f62f2",
+          600: "#2551d6",
+          700: "#1d41ab",
         },
         // Semantic status — used consistently across the whole product, never repurposed
         status: {
-          matched: "#16794f",      // green — matched / complete / posted
-          matchedBg: "#e7f5ee",
-          pending: "#a15c00",      // amber — pending review / in progress
-          pendingBg: "#fbf0dc",
-          exception: "#b3261e",    // red — exception / blocked / variance
-          exceptionBg: "#fbe9e8",
-          info: "#1a5fb4",         // blue — informational / in sync
-          infoBg: "#e7f0fb",
+          matched: "#0f8f55",      // green — matched / complete / posted
+          matchedBg: "#e6f7ef",
+          pending: "#b86e00",      // amber — pending review / in progress
+          pendingBg: "#fdf3dc",
+          exception: "#d92d3a",    // red — exception / blocked / variance
+          exceptionBg: "#ffe9ea",
+          info: "#2f62f2",         // blue — informational / in sync
+          infoBg: "#e8eefe",
         },
       },
       fontFamily: {

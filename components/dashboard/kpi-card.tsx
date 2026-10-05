@@ -15,6 +15,9 @@ const toneIcon: Record<KpiTone, string> = {
 /**
  * Headline number card. Pass `href` to make the whole card a link (with a
  * chevron); omit it for a static card.
+ *
+ * The value and badge sit in a wrapping row: when the card is too narrow for
+ * both, the badge drops under the value instead of being clipped.
  */
 export function KpiCard({
   icon,
@@ -24,6 +27,7 @@ export function KpiCard({
   subtext,
   tone = "neutral",
   href,
+  className,
   children,
 }: {
   icon: React.ReactNode;
@@ -33,27 +37,28 @@ export function KpiCard({
   subtext?: React.ReactNode;
   tone?: KpiTone;
   href?: string;
+  className?: string;
   children?: React.ReactNode;
 }) {
   const body = (
     <>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <span className={cn("flex h-8 w-8 items-center justify-center rounded-md", toneIcon[tone])}>{icon}</span>
-          <span className="text-sm font-medium text-ink-700">{label}</span>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg", toneIcon[tone])}>{icon}</span>
+          <span className="text-sm font-medium text-ink-600">{label}</span>
         </div>
-        {href && <ChevronRight className="h-4 w-4 text-ink-300" />}
+        {href && <ChevronRight className="h-4 w-4 shrink-0 text-ink-300" />}
       </div>
-      <div className="mt-4 flex items-center justify-between gap-2">
-        <span className="text-2xl font-semibold tabular-nums text-ink-900">{value}</span>
-        {badge}
+      <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <span className="text-[1.5rem] font-semibold leading-8 2xl:text-[1.75rem] tracking-tight tabular-nums text-ink-900">{value}</span>
+        {badge && <span className="shrink-0 whitespace-nowrap">{badge}</span>}
       </div>
       {children}
-      {subtext && <p className="mt-2 text-xs text-ink-500">{subtext}</p>}
+      {subtext && <p className="mt-2.5 text-xs text-ink-500">{subtext}</p>}
     </>
   );
 
-  const classes = "block rounded-lg border border-ink-100 bg-white p-4 shadow-subtle";
+  const classes = cn("block rounded-xl border border-ink-100 bg-white p-5 shadow-subtle", className);
   return href ? (
     <Link href={href} className={cn(classes, "transition-shadow hover:shadow-panel")}>
       {body}
