@@ -50,13 +50,20 @@ export function MatchingWorkspace({
   const hasSuggestions = existingMatches.length > 0;
   const hasUnmatched = unmatchedBank.length > 0 || unmatchedLedger.length > 0;
 
-  // Both sides use one sign convention: positive = money leaving the
-  // account, negative = money coming in. Pairing an outflow with an inflow
-  // is almost always a mistake, so warn before allowing it.
+  // Manual matches are a human override, so before allowing one we flag
+  // anything that suggests the two rows are not the same event. Both sides
+  // use one sign convention: positive = money leaving the account,
+  // negative = money coming in.
   const selectedBank = unmatchedBank.find((t) => t.id === selectedBankId);
   const selectedLedger = unmatchedLedger.find((t) => t.id === selectedLedgerId);
-  const oppositeSigns =
-    !!selectedBank && !!selectedLedger && Math.sign(Number(selectedBank.amount)) !== Math.sign(Number(selectedLedger.amount));
+  const bankAmount = selectedBank ? Number(selectedBank.amount) : 0;
+  const ledgerAmount = selectedLedger ? Number(selectedLedger.amount) : 0;
+  const hasBothSelected = !!selectedBank && !!selectedLedger;
+  const oppositeSigns = hasBothSelected && Math.sign(bankAmount) !== Math.sign(ledgerAmount);
+  // Compare sizes ignoring direction so each problem is reported once.
+  const amountGap = hasBothSelected ? Math.abs(Math.abs(bankAmount) - Math.abs(ledgerAmount)) : 0;
+  const amountsDiffer = amountGap >= 0.005;
+  const hasWarning = oppositeSigns || amountsDiffer;
   const directionOf = (t: TxnRow) => (Number(t.amount) < 0 ? "money coming in" : "money going out");
 
   const handleManualMatch = () => {
@@ -135,29 +142,40 @@ export function MatchingWorkspace({
           </div>
           {canMatch && (
             <div className="mt-3 space-y-3">
-              {oppositeSigns && selectedBank && selectedLedger && (
+              {hasWarning && selectedBank && selectedLedger && (
                 <div
                   role="alert"
                   className="flex items-start gap-2 rounded-md border border-status-pending/40 bg-status-pendingBg px-3 py-2 text-sm text-ink-800"
                 >
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-status-pending" />
-                  <p>
-                    <span className="font-medium">Opposite directions.</span> The bank transaction (
-                    {formatCurrency(selectedBank.amount, selectedBank.currency ?? currency)}) is {directionOf(selectedBank)},
-                    but the ledger entry ({formatCurrency(selectedLedger.amount, selectedLedger.currency ?? currency)}) is{" "}
-                    {directionOf(selectedLedger)}. Matching them will usually leave the period out of balance. Check
-                    the sign of the ledger entry before continuing.
-                  </p>
+                  <div className="space-y-1.5">
+                    {amountsDiffer && (
+                      <p>
+                        <span className="font-medium">Amounts differ.</span> The bank transaction is{" "}
+                        {formatCurrency(Math.abs(bankAmount), selectedBank.currency ?? currency)} but the ledger entry is{" "}
+                        {formatCurrency(Math.abs(ledgerAmount), selectedLedger.currency ?? currency)}, a gap of{" "}
+                        {formatCurrency(amountGap, selectedBank.currency ?? currency)}. If they really are the same
+                        event, that gap needs an explanation (a fee, tax, rounding, or a typo in one entry).
+                      </p>
+                    )}
+                    {oppositeSigns && (
+                      <p>
+                        <span className="font-medium">Opposite directions.</span> The bank transaction is{" "}
+                        {directionOf(selectedBank)}, but the ledger entry is {directionOf(selectedLedger)}. Check the
+                        sign of the ledger entry before continuing.
+                      </p>
+                    )}
+                  </div>
                 </div>
               )}
               <Button
                 size="sm"
-                variant={oppositeSigns ? "destructive" : "primary"}
+                variant={hasWarning ? "destructive" : "primary"}
                 onClick={handleManualMatch}
                 disabled={!selectedBankId || !selectedLedgerId || isPending}
               >
                 <GitMerge className="h-3.5 w-3.5" />
-                {oppositeSigns ? "Match anyway" : "Match selected"}
+                {hasWarning ? "Match anyway" : "Match selected"}
               </Button>
             </div>
           )}

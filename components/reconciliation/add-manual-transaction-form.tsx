@@ -37,8 +37,8 @@ export function AddManualTransactionForm({ accountId, entityId }: { accountId: s
           <option value="ledger">Ledger</option>
         </select>
       </div>
-      <div className="w-56">
-        <Input name="amount" type="number" step="0.01" label="Amount" placeholder="150.00" hint="Positive = money out, negative = money in" required />
+      <div className="w-40">
+        <Input name="amount" type="number" step="0.01" label="Amount" placeholder="150.00" required />
       </div>
       <div className="w-40">
         <Input name="transaction_date" type="date" label="Date" required />
@@ -52,6 +52,7 @@ export function AddManualTransactionForm({ accountId, entityId }: { accountId: s
       <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
         Cancel
       </Button>
+      <p className="w-full text-xs text-ink-500">Amount: positive = money going out, negative = money coming in.</p>
       {state?.error && <p className="w-full text-sm text-status-exception">{state.error}</p>}
     </form>
   );

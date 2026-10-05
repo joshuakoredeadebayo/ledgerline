@@ -79,7 +79,7 @@ export function PeriodNavigator({
         value={selectedMonth}
         onChange={(e) => go(e.target.value)}
         aria-label="Select reconciliation month"
-        className="h-8 min-w-[11rem] rounded border border-ink-200 bg-white px-3 text-sm font-medium text-ink-900 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
+        className="h-9 min-w-[15rem] rounded border border-ink-200 bg-white py-0 pl-3 pr-8 text-sm font-medium leading-5 text-ink-900 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
       >
         {options.map((m) => (
           <option key={m} value={m}>
