@@ -135,13 +135,16 @@ export async function importQuickBooksAccounts(entityId: string): Promise<{ erro
 
     const { data: existingAccount } = await supabase
       .from("accounts")
-      .select("id, plaid_account_id")
+      .select("id, plaid_account_id, user_edited")
       .eq("entity_id", entityId)
       .eq("quickbooks_account_id", qbAccount.Id)
       .maybeSingle();
 
     if (existingAccount) {
-      if (existingAccount.plaid_account_id) {
+      if (existingAccount.plaid_account_id || existingAccount.user_edited) {
+        // Also skipped when a person has edited this account by hand
+        // (Entities → Edit): their name/type/reconciliation choices win
+        // over whatever QuickBooks currently says.
         // This account has been merged with a Plaid account via "Link
         // accounts" — its name/type are now user-decided, not just a
         // mirror of QuickBooks. Overwriting them here on every re-import

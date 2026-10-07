@@ -14,7 +14,7 @@ export default async function ClosePage() {
   // fails to type-check against the stale generated types.
   const supabase = (await createClient()) as any;
 
-  const { data: entities } = await supabase.from("entities").select("id, name").order("name");
+  const { data: entities } = await supabase.from("entities").select("id, name").is("archived_at", null).order("name");
 
   const rows: {
     entityId: string;

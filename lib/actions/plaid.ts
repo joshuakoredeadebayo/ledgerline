@@ -334,12 +334,15 @@ export async function syncPlaidItem(plaidItemId: string): Promise<{ error?: stri
 
   const { data: item, error: itemFetchError } = await supabase
     .from("plaid_items")
-    .select("id, organization_id, access_token, cursor")
+    .select("id, organization_id, access_token, cursor, disconnected_at")
     .eq("id", plaidItemId)
     .single();
 
   if (itemFetchError || !item) {
     return { error: itemFetchError?.message ?? "Bank connection not found." };
+  }
+  if ((item as any).disconnected_at) {
+    return { error: "This bank has been disconnected. Connect it again to resume syncing." };
   }
   if (item.organization_id !== membership.organizationId) {
     return { error: "Not authorized for this bank connection." };
@@ -489,10 +492,17 @@ export async function syncEntityPlaidItems(entityId: string): Promise<{ error?: 
     .eq("entity_id", entityId)
     .not("plaid_item_id", "is", null);
 
-  const itemIds = [...new Set((accountRows ?? []).map((a) => a.plaid_item_id).filter(Boolean))] as string[];
+  const candidateItemIds = [...new Set((accountRows ?? []).map((a) => a.plaid_item_id).filter(Boolean))] as string[];
+
+  // Skip banks that have been disconnected (Entities → Disconnect): their access
+  // has been revoked at Plaid, so syncing them would only produce errors.
+  const { data: liveItems } = candidateItemIds.length
+    ? await (supabase as any).from("plaid_items").select("id").in("id", candidateItemIds).is("disconnected_at", null)
+    : { data: [] };
+  const itemIds = ((liveItems ?? []) as { id: string }[]).map((i) => i.id);
 
   if (itemIds.length === 0) {
-    return { error: "No connected bank accounts for this entity." };
+    return { error: "No connected bank accounts for this entity. If you disconnected the bank, connect it again to resume syncing." };
   }
 
   let total = 0;
