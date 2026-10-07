@@ -25,33 +25,49 @@ export interface SuggestedMatch {
  * account, negative = money coming in), so a bank outflow can only match
  * a ledger outflow. Opposite-signed pairs are never suggested, even when
  * the absolute amounts are identical.
+ *
+ * When several pairs score the same (common with round amounts, e.g. four
+ * different $500.00 charges), the pair whose descriptions look most alike
+ * wins, so "KFC" is paired with "KFC" rather than with whichever $500.00
+ * entry happens to come first. Each transaction is used in at most one pair.
  */
 export function suggestMatches(
   bankTxns: MatchCandidate[],
   ledgerTxns: MatchCandidate[]
 ): SuggestedMatch[] {
-  const suggestions: SuggestedMatch[] = [];
-  const usedLedgerIds = new Set<string>();
-
-  for (const bank of bankTxns) {
-    let best: SuggestedMatch | null = null;
-
+  // Score every possible bank/ledger pair, then hand out the best pairs first.
+  // Going pair-by-pair (not bank-by-bank) stops a weak candidate from using
+  // up a ledger entry that a stronger, better-described pair should get.
+  const candidates: (SuggestedMatch & { similarity: number; order: number })[] = [];
+  bankTxns.forEach((bank, order) => {
     for (const ledger of ledgerTxns) {
-      if (usedLedgerIds.has(ledger.id)) continue;
-
       const confidence = scoreMatch(bank, ledger);
-      if (confidence >= 0.5 && (!best || confidence > best.confidence)) {
-        best = { bankTransaction: bank, ledgerTransaction: ledger, confidence };
-      }
+      if (confidence < 0.5) continue;
+      candidates.push({
+        bankTransaction: bank,
+        ledgerTransaction: ledger,
+        confidence,
+        similarity: descriptionSimilarity(bank.description, ledger.description),
+        order,
+      });
     }
+  });
 
-    if (best) {
-      suggestions.push(best);
-      usedLedgerIds.add(best.ledgerTransaction.id);
-    }
+  candidates.sort((x, y) => y.confidence - x.confidence || y.similarity - x.similarity || x.order - y.order);
+
+  const usedBankIds = new Set<string>();
+  const usedLedgerIds = new Set<string>();
+  const suggestions: (SuggestedMatch & { order: number })[] = [];
+  for (const c of candidates) {
+    if (usedBankIds.has(c.bankTransaction.id) || usedLedgerIds.has(c.ledgerTransaction.id)) continue;
+    usedBankIds.add(c.bankTransaction.id);
+    usedLedgerIds.add(c.ledgerTransaction.id);
+    suggestions.push({ bankTransaction: c.bankTransaction, ledgerTransaction: c.ledgerTransaction, confidence: c.confidence, order: c.order });
   }
 
-  return suggestions;
+  return suggestions
+    .sort((x, y) => x.order - y.order)
+    .map(({ bankTransaction, ledgerTransaction, confidence }) => ({ bankTransaction, ledgerTransaction, confidence }));
 }
 
 function scoreMatch(bank: MatchCandidate, ledger: MatchCandidate): number {
@@ -72,4 +88,22 @@ function scoreMatch(bank: MatchCandidate, ledger: MatchCandidate): number {
   if (amountMatch && dayDiff <= 7) return 0.65;
   if (amountClose && dayDiff <= 3) return 0.55;
   return 0;
+}
+
+/** 0..1 overlap between the words of two descriptions; used only to break ties. */
+function descriptionSimilarity(a: string | null, b: string | null): number {
+  const words = (text: string | null) =>
+    new Set(
+      (text ?? "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, " ")
+        .split(" ")
+        .filter((w) => w.length > 1)
+    );
+  const wa = words(a);
+  const wb = words(b);
+  if (wa.size === 0 || wb.size === 0) return 0;
+  let shared = 0;
+  for (const w of wa) if (wb.has(w)) shared++;
+  return shared / (wa.size + wb.size - shared);
 }

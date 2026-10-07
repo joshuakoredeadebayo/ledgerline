@@ -122,7 +122,13 @@ export function MatchingWorkspace({
         <section>
           <h2 className="mb-1 text-sm font-semibold text-ink-700">Unmatched transactions</h2>
           <p className="mb-3 text-sm text-ink-500">
-            No suggested pairing was found for these — select one from each side to match them manually.
+            {unmatchedBank.length > 0 && unmatchedLedger.length === 0
+              ? "There are no ledger transactions this month, so there is nothing for the bank items to pair with."
+              : unmatchedLedger.length > 0 && unmatchedBank.length === 0
+                ? "There are no bank transactions this month, so there is nothing for the ledger items to pair with."
+                : hasSuggestions
+                  ? "These have no suggested pairing. Select one from each side to match them manually."
+                  : "None of these look like the same transaction. Suggestions need the same amount and direction within 7 days of each other. You can still match two items yourself: select one from each side."}
           </p>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <UnmatchedList
