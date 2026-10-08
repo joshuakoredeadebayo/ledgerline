@@ -6,9 +6,20 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentMembership } from "@/lib/actions/membership";
 import { getSiteUrl } from "@/lib/site-url";
-import { assertPermission, type Role } from "@/lib/permissions";
+import { assertPermission, ROLE_LABELS, type Role } from "@/lib/permissions";
+import { sendEmail } from "@/lib/email";
+import { invitationEmail } from "@/lib/email-templates";
 
-export type MemberActionState = { error?: string; success?: string; inviteLink?: string } | null;
+export type MemberActionState = {
+  error?: string;
+  success?: string;
+  inviteLink?: string;
+  /** What happened to the invitation email, so the form can say so plainly. */
+  emailStatus?: "sent" | "not_configured" | "failed";
+} | null;
+
+const fmtExpiry = (iso: string) =>
+  new Date(iso).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 
 // Which roles each manager may hand out. The database has the final say
 // (see guard_member_changes in migration 0008), this keeps the UI honest.
@@ -82,7 +93,7 @@ export async function inviteMember(_prev: MemberActionState, formData: FormData)
       token,
       invited_by: membership.userId,
     })
-    .select("id")
+    .select("id, expires_at")
     .single();
 
   if (error) {
@@ -96,7 +107,66 @@ export async function inviteMember(_prev: MemberActionState, formData: FormData)
 
   revalidatePath("/settings/members");
   const link = `${await getSiteUrl()}/signup?invite=${token}`;
-  return { success: `Invitation created for ${email}. Send them this link:`, inviteLink: link };
+
+  const message = invitationEmail({
+    organizationName: membership.organizationName,
+    inviterEmail: membership.email,
+    roleLabel: ROLE_LABELS[role],
+    link,
+    expiresOn: fmtExpiry(invitation.expires_at),
+  });
+  const result = await sendEmail({ to: email, ...message });
+
+  if (result.sent) {
+    return { success: `Invitation emailed to ${email}. You can also share this link yourself:`, inviteLink: link, emailStatus: "sent" };
+  }
+  if (result.skipped) {
+    return { success: `Invitation created for ${email}. Email isn't set up yet, so send them this link:`, inviteLink: link, emailStatus: "not_configured" };
+  }
+  return {
+    success: `Invitation created for ${email}, but the email couldn't be sent (${result.error}). Send them this link instead:`,
+    inviteLink: link,
+    emailStatus: "failed",
+  };
+}
+
+/** Sends the invitation email again for an open invitation (same link, same expiry). */
+export async function resendInvitation(invitationId: string): Promise<{ error?: string; success?: string }> {
+  const membership = await getCurrentMembership();
+  if (!membership) return { error: "Not signed in." };
+  assertPermission(membership.role, "org.manage_members");
+
+  const supabase = (await createClient()) as any;
+  const { data: invitation } = await supabase
+    .from("organization_invitations")
+    .select("id, email, role, token, expires_at")
+    .eq("id", invitationId)
+    .eq("organization_id", membership.organizationId)
+    .is("accepted_at", null)
+    .is("revoked_at", null)
+    .gt("expires_at", new Date().toISOString())
+    .maybeSingle();
+  if (!invitation) return { error: "That invitation is no longer open." };
+
+  const message = invitationEmail({
+    organizationName: membership.organizationName,
+    inviterEmail: membership.email,
+    roleLabel: ROLE_LABELS[invitation.role as Role],
+    link: `${await getSiteUrl()}/signup?invite=${invitation.token}`,
+    expiresOn: fmtExpiry(invitation.expires_at),
+  });
+  const result = await sendEmail({ to: invitation.email, ...message });
+
+  if (!result.sent) {
+    return {
+      error: result.skipped
+        ? "Email isn't set up yet. Copy the link and send it yourself."
+        : `The email couldn't be sent: ${result.error}`,
+    };
+  }
+
+  await logAudit(supabase, membership.organizationId, membership.userId, "invitation.resent", "organization_invitations", invitationId, null, { email: invitation.email });
+  return { success: `Sent again to ${invitation.email}.` };
 }
 
 export async function revokeInvitation(invitationId: string): Promise<{ error?: string }> {

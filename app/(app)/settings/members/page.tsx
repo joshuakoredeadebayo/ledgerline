@@ -2,9 +2,10 @@ import { getCurrentMembership } from "@/lib/actions/membership";
 import { createClient } from "@/lib/supabase/server";
 import { can, ROLE_DESCRIPTIONS, ROLE_LABELS, type Role } from "@/lib/permissions";
 import { getSiteUrl } from "@/lib/site-url";
+import { isEmailConfigured } from "@/lib/email";
 import { cn } from "@/lib/utils";
 import { InviteMemberForm } from "@/components/settings/invite-member-form";
-import { MemberRowActions, RevokeInvitationButton } from "@/components/settings/member-actions";
+import { MemberRowActions, RevokeInvitationButton, ResendInvitationButton } from "@/components/settings/member-actions";
 import { CopyLinkButton } from "@/components/settings/copy-link-button";
 
 // Mirrors CAN_INVITE / CAN_ASSIGN in lib/actions/members.ts (the server enforces them).
@@ -70,9 +71,9 @@ export default async function MembersPage() {
         <section className="rounded-xl border border-ink-100 bg-white p-5 shadow-subtle">
           <h2 className="text-[15px] font-semibold text-ink-900">Invite someone</h2>
           <p className="mb-4 mt-0.5 text-xs text-ink-500">
-            They sign up through the invitation link and join this organization with the role you choose.
+            They receive an email with a link to sign up and join this organization with the role you choose.
           </p>
-          <InviteMemberForm roles={inviteRoles} />
+          <InviteMemberForm roles={inviteRoles} emailConfigured={isEmailConfigured()} />
         </section>
       )}
 
@@ -137,6 +138,7 @@ export default async function MembersPage() {
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
+                  {isEmailConfigured() && <ResendInvitationButton invitationId={inv.id} />}
                   <CopyLinkButton text={`${siteUrl}/signup?invite=${inv.token}`} />
                   <RevokeInvitationButton invitationId={inv.id} email={inv.email} />
                 </div>

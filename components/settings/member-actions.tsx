@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { changeMemberRole, removeMember, revokeInvitation } from "@/lib/actions/members";
+import { changeMemberRole, removeMember, resendInvitation, revokeInvitation } from "@/lib/actions/members";
 import { ROLE_LABELS, type Role } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
 
@@ -86,6 +86,36 @@ export function RevokeInvitationButton({ invitationId, email }: { invitationId: 
         Revoke
       </Button>
       {error && <span className="text-xs text-status-exception">{error}</span>}
+    </span>
+  );
+}
+
+export function ResendInvitationButton({ invitationId }: { invitationId: string }) {
+  const [pending, startTransition] = useTransition();
+  const [message, setMessage] = useState<{ text: string; tone: "error" | "ok" } | null>(null);
+
+  return (
+    <span className="inline-flex flex-col items-end gap-1">
+      <Button
+        size="sm"
+        variant="secondary"
+        disabled={pending}
+        onClick={() => {
+          setMessage(null);
+          startTransition(async () => {
+            const res = await resendInvitation(invitationId);
+            if (res.error) setMessage({ text: res.error, tone: "error" });
+            else if (res.success) setMessage({ text: res.success, tone: "ok" });
+          });
+        }}
+      >
+        Resend email
+      </Button>
+      {message && (
+        <span className={`max-w-[16rem] text-right text-xs ${message.tone === "error" ? "text-status-exception" : "text-status-matched"}`}>
+          {message.text}
+        </span>
+      )}
     </span>
   );
 }

@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { CopyLinkButton } from "@/components/settings/copy-link-button";
 
-export function InviteMemberForm({ roles }: { roles: Role[] }) {
+export function InviteMemberForm({ roles, emailConfigured }: { roles: Role[]; emailConfigured: boolean }) {
   const [state, formAction, pending] = useActionState<MemberActionState, FormData>(inviteMember, null);
 
   return (
@@ -45,16 +45,26 @@ export function InviteMemberForm({ roles }: { roles: Role[] }) {
       )}
 
       {state?.inviteLink && (
-        <div className="rounded-lg border border-status-matched/20 bg-status-matchedBg p-3 text-sm">
+        <div
+          className={
+            state.emailStatus === "sent"
+              ? "rounded-lg border border-status-matched/20 bg-status-matchedBg p-3 text-sm"
+              : "rounded-lg border border-status-pending/20 bg-status-pendingBg p-3 text-sm"
+          }
+        >
           <p className="font-medium text-ink-900">{state.success}</p>
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <code className="min-w-0 flex-1 break-all rounded bg-white px-2 py-1.5 text-xs text-ink-800">{state.inviteLink}</code>
             <CopyLinkButton text={state.inviteLink} />
           </div>
-          <p className="mt-2 text-xs text-ink-600">
-            Ledgerline doesn&apos;t send email yet, so share this link yourself. It works once and expires in 14 days.
-          </p>
+          <p className="mt-2 text-xs text-ink-600">It works once and expires in 14 days.</p>
         </div>
+      )}
+
+      {!state?.inviteLink && !emailConfigured && (
+        <p className="text-xs text-ink-500">
+          Email sending isn&apos;t set up yet, so you&apos;ll get a link to share yourself. See the setup note in the project README to turn it on.
+        </p>
       )}
     </div>
   );
