@@ -22,6 +22,8 @@ interface PeriodSummaryProps {
   currency: string;
   finalizedAt: string | null;
   canFinalize: boolean;
+  /** Transactions in the period, not counting excluded ones. An empty month can't be finalized. */
+  transactionCount: number;
 }
 
 const STATUS_META: Record<Status, { status: BadgeStatus; label: string }> = {
@@ -44,11 +46,13 @@ export function PeriodSummary({
   currency,
   finalizedAt,
   canFinalize,
+  transactionCount,
 }: PeriodSummaryProps) {
   const [isPending, startTransition] = useTransition();
   const [reason, setReason] = useState("");
   const [reopenOpen, setReopenOpen] = useState(false);
-  const meta = STATUS_META[status];
+  const noActivity = transactionCount === 0 && status !== "finalized";
+  const meta = noActivity ? { status: "neutral" as BadgeStatus, label: "No activity" } : STATUS_META[status];
 
   return (
     <div className="rounded-lg border border-ink-100 bg-white p-5">
@@ -65,7 +69,7 @@ export function PeriodSummary({
           </div>
         </div>
 
-        {canFinalize && status === "reconciled" && (
+        {canFinalize && status === "reconciled" && !noActivity && (
           <Button
             size="sm"
             loading={isPending}

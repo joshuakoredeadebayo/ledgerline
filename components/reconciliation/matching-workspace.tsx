@@ -7,7 +7,15 @@ import { Button } from "@/components/ui/button";
 import { ConfidenceScore } from "@/components/reconciliation/confidence-score";
 import { EmptyState } from "@/components/shared/empty-state";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { confirmMatch, rejectMatch, createManualMatch } from "@/lib/actions/reconciliation";
+import {
+  confirmMatch,
+  rejectMatch,
+  createManualMatch,
+  unmatchMatch,
+  excludeTransaction,
+  restoreTransaction,
+} from "@/lib/actions/reconciliation";
+import { EXCLUDE_REASONS } from "@/lib/exception-reasons";
 
 interface TxnRow {
   id: string;
@@ -31,6 +39,8 @@ export function MatchingWorkspace({
   entityId,
   currency,
   existingMatches,
+  confirmedMatches,
+  excludedTxns,
   unmatchedBank,
   unmatchedLedger,
   canMatch,
@@ -39,6 +49,8 @@ export function MatchingWorkspace({
   entityId: string;
   currency: string;
   existingMatches: ExistingMatch[];
+  confirmedMatches: ExistingMatch[];
+  excludedTxns: TxnRow[];
   unmatchedBank: TxnRow[];
   unmatchedLedger: TxnRow[];
   canMatch: boolean;
@@ -46,6 +58,10 @@ export function MatchingWorkspace({
   const [isPending, startTransition] = useTransition();
   const [selectedBankId, setSelectedBankId] = useState<string | null>(null);
   const [selectedLedgerId, setSelectedLedgerId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [excluding, setExcluding] = useState(false);
+  const [excludeReason, setExcludeReason] = useState<string>(EXCLUDE_REASONS[0]);
+  const [excludeNote, setExcludeNote] = useState("");
 
   const hasSuggestions = existingMatches.length > 0;
   const hasUnmatched = unmatchedBank.length > 0 || unmatchedLedger.length > 0;
@@ -65,6 +81,29 @@ export function MatchingWorkspace({
   const amountsDiffer = amountGap >= 0.005;
   const hasWarning = oppositeSigns || amountsDiffer;
   const directionOf = (t: TxnRow) => (Number(t.amount) < 0 ? "money coming in" : "money going out");
+
+  const selectedIds = [selectedBankId, selectedLedgerId].filter(Boolean) as string[];
+
+  const run = (work: () => Promise<{ error?: string } | void>) => {
+    setActionError(null);
+    startTransition(async () => {
+      const res = await work();
+      if (res && "error" in res && res.error) setActionError(res.error);
+    });
+  };
+
+  const handleExclude = () => {
+    run(async () => {
+      for (const id of selectedIds) {
+        const res = await excludeTransaction(id, accountId, excludeReason, excludeNote);
+        if (res.error) return res;
+      }
+      setSelectedBankId(null);
+      setSelectedLedgerId(null);
+      setExcluding(false);
+      setExcludeNote("");
+    });
+  };
 
   const handleManualMatch = () => {
     if (!selectedBankId || !selectedLedgerId) return;
@@ -183,12 +222,137 @@ export function MatchingWorkspace({
                 <GitMerge className="h-3.5 w-3.5" />
                 {hasWarning ? "Match anyway" : "Match selected"}
               </Button>
+              {selectedIds.length === 0 && (
+                <span className="ml-3 text-xs text-ink-500">Select a transaction to match it or exclude it.</span>
+              )}
+              {selectedIds.length > 0 && !excluding && (
+                <Button size="sm" variant="ghost" className="ml-2" onClick={() => setExcluding(true)} disabled={isPending}>
+                  Exclude {selectedIds.length === 1 ? "selected" : `${selectedIds.length} selected`}…
+                </Button>
+              )}
+              {excluding && selectedIds.length > 0 && (
+                <div className="rounded-md border border-ink-200 bg-ink-50 p-3 text-sm">
+                  <p className="font-medium text-ink-900">
+                    Exclude {selectedIds.length === 1 ? "this transaction" : "these transactions"} from the reconciliation?
+                  </p>
+                  <p className="mt-0.5 text-xs text-ink-500">
+                    Excluded items are left out of the totals. You can restore them later from the Excluded list below.
+                  </p>
+                  <div className="mt-3 flex flex-wrap items-end gap-3">
+                    <label className="flex flex-col gap-1 text-xs font-medium text-ink-700">
+                      Reason
+                      <select
+                        value={excludeReason}
+                        onChange={(e) => setExcludeReason(e.target.value)}
+                        className="h-9 min-w-[14rem] rounded border border-ink-200 bg-white py-0 pl-3 pr-8 text-sm font-normal text-ink-900 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
+                      >
+                        {EXCLUDE_REASONS.map((r) => (
+                          <option key={r} value={r}>
+                            {r}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="flex min-w-[14rem] flex-1 flex-col gap-1 text-xs font-medium text-ink-700">
+                      Note {excludeReason === "Other" ? "(required)" : "(optional)"}
+                      <input
+                        value={excludeNote}
+                        onChange={(e) => setExcludeNote(e.target.value)}
+                        maxLength={300}
+                        className="h-9 rounded border border-ink-200 bg-white px-3 text-sm font-normal text-ink-900 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
+                      />
+                    </label>
+                    <Button size="sm" onClick={handleExclude} disabled={isPending}>
+                      Exclude
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setExcluding(false)} disabled={isPending}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </section>
       )}
 
-      {!hasSuggestions && !hasUnmatched && (
+      {actionError && (
+        <p role="alert" className="rounded-md border border-status-exception/20 bg-status-exceptionBg px-3 py-2 text-sm text-status-exception">
+          {actionError}
+        </p>
+      )}
+
+      {confirmedMatches.length > 0 && (
+        <details className="rounded-lg border border-ink-100 bg-white">
+          <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-ink-700">
+            Confirmed matches ({confirmedMatches.length})
+          </summary>
+          <ul className="divide-y divide-ink-100 border-t border-ink-100">
+            {confirmedMatches.map((match) => {
+              const bank = match.match_lines.find((l) => l.side === "bank")?.transactions;
+              const ledger = match.match_lines.find((l) => l.side === "ledger")?.transactions;
+              if (!bank || !ledger) return null;
+              return (
+                <li key={match.id} className="flex flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 text-sm">
+                  <div className="min-w-[12rem] flex-1">
+                    <p className="text-xs text-ink-500">Bank</p>
+                    <p className="font-medium tabular-nums text-ink-900">{formatCurrency(bank.amount, bank.currency ?? currency)}</p>
+                    <p className="text-xs text-ink-500">
+                      {formatDate(bank.transaction_date)} · {bank.description ?? "No description"}
+                    </p>
+                  </div>
+                  <div className="min-w-[12rem] flex-1">
+                    <p className="text-xs text-ink-500">Ledger</p>
+                    <p className="font-medium tabular-nums text-ink-900">{formatCurrency(ledger.amount, ledger.currency ?? currency)}</p>
+                    <p className="text-xs text-ink-500">
+                      {formatDate(ledger.transaction_date)} · {ledger.description ?? "No description"}
+                    </p>
+                  </div>
+                  <span className="text-xs text-ink-500">{match.match_type === "manual" ? "Matched by hand" : "Suggested match"}</span>
+                  {canMatch && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={isPending}
+                      onClick={() => {
+                        if (!window.confirm("Undo this match? Both transactions go back to unmatched.")) return;
+                        run(() => unmatchMatch(match.id, accountId));
+                      }}
+                    >
+                      Unmatch
+                    </Button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </details>
+      )}
+
+      {excludedTxns.length > 0 && (
+        <details className="rounded-lg border border-ink-100 bg-white">
+          <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-ink-700">Excluded transactions ({excludedTxns.length})</summary>
+          <ul className="divide-y divide-ink-100 border-t border-ink-100">
+            {excludedTxns.map((txn) => (
+              <li key={txn.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm">
+                <div>
+                  <p className="font-medium tabular-nums text-ink-900">{formatCurrency(txn.amount, txn.currency ?? currency)}</p>
+                  <p className="text-xs text-ink-500">
+                    {formatDate(txn.transaction_date)} · {txn.description ?? "No description"}
+                  </p>
+                </div>
+                {canMatch && (
+                  <Button size="sm" variant="ghost" disabled={isPending} onClick={() => run(() => restoreTransaction(txn.id, accountId))}>
+                    Restore
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+
+      {!hasSuggestions && !hasUnmatched && confirmedMatches.length === 0 && excludedTxns.length === 0 && (
         <EmptyState
           icon={<GitMerge className="h-8 w-8" />}
           title="Nothing to match right now"

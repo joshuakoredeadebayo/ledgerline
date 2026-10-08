@@ -33,7 +33,8 @@ export interface SuggestedMatch {
  */
 export function suggestMatches(
   bankTxns: MatchCandidate[],
-  ledgerTxns: MatchCandidate[]
+  ledgerTxns: MatchCandidate[],
+  options: { excludePairs?: ReadonlySet<string> } = {}
 ): SuggestedMatch[] {
   // Score every possible bank/ledger pair, then hand out the best pairs first.
   // Going pair-by-pair (not bank-by-bank) stops a weak candidate from using
@@ -41,6 +42,8 @@ export function suggestMatches(
   const candidates: (SuggestedMatch & { similarity: number; order: number })[] = [];
   bankTxns.forEach((bank, order) => {
     for (const ledger of ledgerTxns) {
+      // A pair someone has already rejected (or unmatched) is never suggested again.
+      if (options.excludePairs?.has(`${bank.id}|${ledger.id}`)) continue;
       const confidence = scoreMatch(bank, ledger);
       if (confidence < 0.5) continue;
       candidates.push({

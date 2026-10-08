@@ -9,6 +9,7 @@ import { MatchingWorkspace } from "@/components/reconciliation/matching-workspac
 import { AddManualTransactionForm } from "@/components/reconciliation/add-manual-transaction-form";
 import { PeriodSummary } from "@/components/reconciliation/period-summary";
 import { PeriodNavigator } from "@/components/reconciliation/period-navigator";
+import { testToolsEnabled } from "@/lib/test-tools";
 
 export default async function MatchingWorkspacePage({
   params,
@@ -104,6 +105,26 @@ export default async function MatchingWorkspacePage({
     )
     .eq("reconciliation_id", periodSummary?.id ?? "")
     .eq("status", "pending_review");
+
+  // Matches a person (or a bulk confirm) has already accepted for this period — shown so they
+  // can be undone — and transactions excluded from the reconciliation, shown so they can be restored.
+  const { data: confirmedMatches } = await supabase
+    .from("matches")
+    .select(
+      "id, status, confidence_score, match_type, match_lines(transaction_id, side, transactions(id, amount, currency, transaction_date, description, source, raw_payload))"
+    )
+    .eq("reconciliation_id", periodSummary?.id ?? "")
+    .eq("status", "confirmed")
+    .order("confirmed_at", { ascending: false });
+
+  const { data: excludedTxns } = await supabase
+    .from("transactions")
+    .select("id, amount, currency, transaction_date, description, source")
+    .eq("account_id", accountId)
+    .eq("status", "excluded")
+    .gte("transaction_date", periodSummary?.period_start ?? "1970-01-01")
+    .lte("transaction_date", periodSummary?.period_end ?? "2999-12-31")
+    .order("transaction_date", { ascending: false });
 
   // Raw unmatched transactions the matching engine found no plausible
   // suggestion for — these never appeared in the workspace before,
@@ -214,10 +235,11 @@ export default async function MatchingWorkspacePage({
           currency={accountCurrency}
           finalizedAt={periodSummary.finalized_at}
           canFinalize={canFinalize}
+          transactionCount={Math.max(0, (activity[periodSummary.period_start.slice(0, 7)] ?? 0) - (excludedTxns?.length ?? 0))}
         />
       )}
 
-      {canMatch && periodSummary?.status !== "finalized" && (
+      {canMatch && periodSummary?.status !== "finalized" && testToolsEnabled() && (
         <AddManualTransactionForm accountId={accountId} entityId={account.entity_id} />
       )}
 
@@ -226,6 +248,8 @@ export default async function MatchingWorkspacePage({
         entityId={account.entity_id}
         currency={accountCurrency}
         existingMatches={(existingMatches ?? []) as any}
+        confirmedMatches={(confirmedMatches ?? []) as any}
+        excludedTxns={(excludedTxns ?? []) as any}
         unmatchedBank={unmatchedBank as any}
         unmatchedLedger={unmatchedLedger as any}
         canMatch={canMatch && periodSummary?.status !== "finalized"}

@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { refreshCloseChecklistIfPeriodExists } from "@/lib/close-period-status";
 import { syncSuggestedMatches } from "@/lib/matching-sync";
+import { computePeriodTotals } from "@/lib/reconciliation-math";
 
 export type ReconciliationStatus = "draft" | "needs_review" | "reconciled" | "finalized" | "reopened";
 
@@ -93,24 +94,60 @@ export async function recomputeReconciliationStatus(reconciliationId: string) {
     .gte("transaction_date", recon.period_start)
     .lte("transaction_date", recon.period_end);
 
-  const sideOf = (t: { source: string; raw_payload: unknown }) => {
-    if (t.source === "manual") return (t.raw_payload as { side?: string } | null)?.side ?? "bank";
+  const sideOf = (t: { source: string; raw_payload: unknown }): "bank" | "ledger" => {
+    if (t.source === "manual") return (t.raw_payload as { side?: string } | null)?.side === "ledger" ? "ledger" : "bank";
     return t.source === "plaid" ? "bank" : "ledger";
   };
 
-  let bookTotal = 0;
-  let externalTotal = 0;
-  let hasUnresolved = false;
-  const unmatchedTxnIds: string[] = [];
+  const periodTxns = (txns ?? []).map((t: any) => ({
+    id: t.id as string,
+    amount: t.amount as number,
+    side: sideOf(t),
+    status: t.status as "unmatched" | "matched" | "excluded",
+  }));
+  const unmatchedIds = periodTxns.filter((t: { status: string }) => t.status === "unmatched").map((t: { id: string }) => t.id);
+  const matchedIds = periodTxns.filter((t: { status: string }) => t.status === "matched").map((t: { id: string }) => t.id);
 
-  for (const t of txns ?? []) {
-    if (sideOf(t) === "ledger") bookTotal += Number(t.amount);
-    else externalTotal += Number(t.amount);
-    if (t.status === "unmatched") {
-      hasUnresolved = true;
-      unmatchedTxnIds.push(t.id);
+  // Unmatched transactions a person has explained (resolved or dismissed with a reason):
+  // they stay unmatched, but no longer block the period or count toward the difference.
+  const explainedIds = new Set<string>();
+  for (const ids of chunk(unmatchedIds)) {
+    const { data: explained } = await supabase
+      .from("exceptions")
+      .select("transaction_id")
+      .in("transaction_id", ids)
+      .in("status", ["resolved", "dismissed"])
+      .not("resolved_by", "is", null);
+    for (const e of explained ?? []) explainedIds.add(e.transaction_id);
+  }
+
+  // Matched transactions whose partner sits in another month (a cut-off difference).
+  const crossPeriodIds = new Set<string>();
+  for (const ids of chunk(matchedIds)) {
+    const { data: ownLines } = await supabase
+      .from("match_lines")
+      .select("match_id, transaction_id, matches!inner(status)")
+      .in("transaction_id", ids)
+      .eq("matches.status", "confirmed");
+    const byMatch = new Map<string, string[]>();
+    for (const l of ownLines ?? []) byMatch.set(l.match_id, [...(byMatch.get(l.match_id) ?? []), l.transaction_id]);
+    for (const matchIds of chunk([...byMatch.keys()])) {
+      const { data: allLines } = await supabase
+        .from("match_lines")
+        .select("match_id, transactions(transaction_date)")
+        .in("match_id", matchIds);
+      const outside = new Set<string>();
+      for (const l of allLines ?? []) {
+        const date = l.transactions?.transaction_date as string | undefined;
+        if (date && (date < recon.period_start || date > recon.period_end)) outside.add(l.match_id);
+      }
+      for (const m of outside) for (const id of byMatch.get(m) ?? []) crossPeriodIds.add(id);
     }
   }
+
+  const totals = computePeriodTotals(periodTxns, explainedIds, crossPeriodIds);
+  const unmatchedTxnIds = totals.unresolvedIds;
+  let hasUnresolved = unmatchedTxnIds.length > 0;
 
   // Regenerate suggested matches from current unmatched transactions
   // before counting pending ones below, so "matches pending review"
@@ -158,7 +195,7 @@ export async function recomputeReconciliationStatus(reconciliationId: string) {
       // unmatched (e.g. a reopened period) — reopen its exception too.
       await supabase
         .from("exceptions")
-        .update({ status: "open", resolved_by: null, resolved_at: null })
+        .update({ status: "open", resolved_by: null, resolved_at: null, resolution_reason: null, resolution_note: null })
         .eq("id", existing.id);
     }
   }
@@ -169,21 +206,28 @@ export async function recomputeReconciliationStatus(reconciliationId: string) {
     }
   }
 
-  const difference = Number((bookTotal - externalTotal).toFixed(2));
+  const difference = totals.difference;
   const status: ReconciliationStatus =
     hasUnresolved || difference !== 0 ? "needs_review" : "reconciled";
 
   await supabase
     .from("reconciliations")
     .update({
-      book_total: bookTotal,
-      external_total: externalTotal,
+      book_total: totals.bookTotal,
+      external_total: totals.externalTotal,
       unexplained_difference: difference,
       status,
     })
     .eq("id", reconciliationId);
 
   await refreshCloseChecklistIfPeriodExists(recon.entity_id, recon.period_start, recon.period_end);
+}
+
+/** Splits an array so long `in (...)` lists stay within URL limits. */
+function chunk<T>(items: T[], size = 150): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
 }
 
 function monthBoundsOf(dateStr: string) {
