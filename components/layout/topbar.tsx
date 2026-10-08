@@ -1,7 +1,8 @@
 "use client";
 
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { ChevronDown, LogOut, User } from "lucide-react";
+import Link from "next/link";
+import { ChevronDown, LogOut, Settings, User } from "lucide-react";
 import { logout } from "@/lib/actions/auth";
 import { ROLE_LABELS, type Role } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
@@ -43,6 +44,15 @@ export function Topbar({
             sideOffset={6}
             className="min-w-[10rem] rounded-md border border-ink-100 bg-white p-1 shadow-panel"
           >
+            <DropdownMenu.Item asChild>
+              <Link
+                href="/settings/account"
+                className="flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-sm text-ink-700 outline-none hover:bg-ink-50"
+              >
+                <Settings className="h-3.5 w-3.5" />
+                My account
+              </Link>
+            </DropdownMenu.Item>
             <DropdownMenu.Item
               onSelect={() => logout()}
               className="flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-sm text-ink-700 outline-none hover:bg-ink-50"

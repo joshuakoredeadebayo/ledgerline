@@ -12,6 +12,7 @@ export function SettingsNav({ showAuditLog }: { showAuditLog: boolean }) {
     { href: "/settings/members", label: "Members" },
     { href: "/settings/integrations", label: "Integrations" },
     ...(showAuditLog ? [{ href: "/settings/audit-log", label: "Audit log" }] : []),
+    { href: "/settings/account", label: "My account" },
   ];
 
   return (
