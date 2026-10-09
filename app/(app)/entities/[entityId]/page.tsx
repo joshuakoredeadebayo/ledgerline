@@ -30,14 +30,22 @@ interface AccountRow {
   plaid_account_id: string | null;
   plaid_item_id: string | null;
   quickbooks_account_id: string | null;
+  quickbooks_item_id: string | null;
   archived_at: string | null;
 }
 
 const fmtDate = (iso: string | null | undefined) =>
   iso ? new Date(`${String(iso).slice(0, 10)}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }) : "—";
 
-export default async function EntityDetailPage({ params }: { params: Promise<{ entityId: string }> }) {
+export default async function EntityDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ entityId: string }>;
+  searchParams: Promise<{ qb?: string }>;
+}) {
   const { entityId } = await params;
+  const { qb: qbFlag } = await searchParams;
   const membership = await getCurrentMembership();
   // Cast to `any`: some columns/functions are newer than the generated Supabase types.
   const supabase = (await createClient()) as any;
@@ -51,7 +59,7 @@ export default async function EntityDetailPage({ params }: { params: Promise<{ e
 
   const { data: accountData } = await supabase
     .from("accounts")
-    .select("id, name, code, account_type, is_reconcilable, source, plaid_account_id, plaid_item_id, quickbooks_account_id, archived_at")
+    .select("id, name, code, account_type, is_reconcilable, source, plaid_account_id, plaid_item_id, quickbooks_account_id, quickbooks_item_id, archived_at")
     .eq("entity_id", entityId)
     .order("account_type")
     .order("code");
@@ -84,13 +92,25 @@ export default async function EntityDetailPage({ params }: { params: Promise<{ e
   for (const j of (jobRows ?? []) as any[]) if (j.plaid_item_id && !lastSync.has(j.plaid_item_id)) lastSync.set(j.plaid_item_id, j.completed_at);
 
   const hasQuickBooksAccounts = allAccounts.some((a) => a.quickbooks_account_id);
-  const { data: qb } = membership
-    ? await supabase.from("quickbooks_items").select("last_synced_at").eq("organization_id", membership.organizationId).maybeSingle()
-    : { data: null };
+
+  // This entity's QuickBooks connection: one made for it, else the one its accounts came
+  // from, else a shared organization-wide one (the same order the sync itself uses).
+  const { data: qbRows } = membership
+    ? await supabase
+        .from("quickbooks_items")
+        .select("id, entity_id, company_name, last_synced_at")
+        .eq("organization_id", membership.organizationId)
+        .order("created_at", { ascending: true })
+    : { data: [] };
+  const qbItems: { id: string; entity_id: string | null; company_name: string | null; last_synced_at: string | null }[] = qbRows ?? [];
+  const boundItemIds = new Set(allAccounts.map((a) => a.quickbooks_item_id).filter(Boolean) as string[]);
+  const qb =
+    qbItems.find((i) => i.entity_id === entityId) ?? qbItems.find((i) => boundItemIds.has(i.id)) ?? qbItems.find((i) => i.entity_id === null) ?? null;
 
   const isArchived = !!entity.archived_at;
   const canManage = membership ? can(membership.role, "entities.manage") && !isArchived : false;
   const canEntityAdmin = membership ? can(membership.role, "entities.manage") : false;
+  const canConnectQuickBooks = membership ? can(membership.role, "org.manage_integrations") && !isArchived : false;
   const canUnlink = membership ? membership.role === "owner" || membership.role === "controller" : false;
   const hasLivePlaid = accounts.some((a) => a.source === "plaid" && a.plaid_item_id && !banks.find((b) => b.id === a.plaid_item_id)?.disconnected_at);
   const linkableAccounts = canManage ? await getLinkableAccounts(entityId) : [];
@@ -143,6 +163,12 @@ export default async function EntityDetailPage({ params }: { params: Promise<{ e
         </div>
       </div>
 
+      {qbFlag === "connected" && (
+        <p className="rounded-lg border border-status-matched/20 bg-status-matchedBg px-4 py-3 text-sm text-status-matched">
+          QuickBooks connected. Next, use “Import QuickBooks accounts”, then sync transactions.
+        </p>
+      )}
+
       {isArchived && (
         <p className="rounded-lg border border-status-pending/20 bg-status-pendingBg px-4 py-3 text-sm text-ink-800">
           This entity is archived. It is hidden from reconciliation, the close and bank syncing, and nothing here can be changed until you
@@ -153,11 +179,6 @@ export default async function EntityDetailPage({ params }: { params: Promise<{ e
       {/* Connections */}
       <section className="rounded-xl border border-ink-100 bg-white p-5 shadow-subtle">
         <h2 className="text-[15px] font-semibold text-ink-900">Connections</h2>
-        {banks.length === 0 && !hasQuickBooksAccounts ? (
-          <p className="mt-2 text-sm text-ink-500">
-            Nothing connected yet. Connect a bank, or import accounts from QuickBooks, to start bringing in transactions.
-          </p>
-        ) : (
           <ul className="mt-2 divide-y divide-ink-100">
             {banks.map((b) => {
               const count = allAccounts.filter((a) => a.plaid_item_id === b.id).length;
@@ -177,24 +198,34 @@ export default async function EntityDetailPage({ params }: { params: Promise<{ e
                 </li>
               );
             })}
-            {hasQuickBooksAccounts && (
-              <li className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
-                <div>
-                  <p className="font-medium text-ink-900">QuickBooks</p>
-                  <p className="text-xs text-ink-500">
-                    {qb ? `Last synced ${timeAgo(qb.last_synced_at)}` : "Not connected. Reconnect it in Settings → Integrations."}
-                  </p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <Badge status={qb ? "matched" : "neutral"} label={qb ? "Connected" : "Disconnected"} />
+            <li className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
+              <div>
+                <p className="font-medium text-ink-900">QuickBooks{qb?.company_name ? ` · ${qb.company_name}` : ""}</p>
+                <p className="text-xs text-ink-500">
+                  {qb
+                    ? `${qb.entity_id ? "Connected to this entity" : "Shared by all entities"} · ${qb.last_synced_at ? `Last synced ${timeAgo(qb.last_synced_at)}` : "Not synced yet"}`
+                    : "Not connected to a QuickBooks company"}
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <Badge status={qb ? "matched" : "neutral"} label={qb ? "Connected" : "Not connected"} />
+                {qb ? (
                   <Link href="/settings/integrations" className="text-xs font-medium text-accent-600 hover:text-accent-700">
                     Manage
                   </Link>
-                </div>
-              </li>
-            )}
+                ) : (
+                  canConnectQuickBooks && (
+                    <a
+                      href={`/api/quickbooks/connect?entityId=${entity.id}`}
+                      className="inline-flex h-8 items-center rounded border border-ink-200 bg-white px-3 text-sm font-medium text-ink-800 hover:bg-ink-50"
+                    >
+                      Connect QuickBooks
+                    </a>
+                  )
+                )}
+              </div>
+            </li>
           </ul>
-        )}
       </section>
 
       {canManage && (
@@ -202,8 +233,8 @@ export default async function EntityDetailPage({ params }: { params: Promise<{ e
           <CreateAccountForm entityId={entity.id} />
           <ConnectBankButton entities={[{ id: entity.id, name: entity.name }]} presetEntityId={entity.id} />
           {hasLivePlaid && <SyncTransactionsButton entityId={entity.id} />}
-          <ImportQuickBooksAccountsButton entityId={entity.id} />
-          {hasQuickBooksAccounts && <SyncQuickBooksButton entityId={entity.id} />}
+          {qb && <ImportQuickBooksAccountsButton entityId={entity.id} />}
+          {qb && hasQuickBooksAccounts && <SyncQuickBooksButton entityId={entity.id} />}
         </div>
       )}
       {canManage && <LinkAccountsForm entityId={entity.id} accounts={linkableAccounts} />}

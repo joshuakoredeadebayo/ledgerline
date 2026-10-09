@@ -38,9 +38,9 @@ export default async function EntitiesPage() {
 
   const { data: accountRows } = await supabase
     .from("accounts")
-    .select("entity_id, plaid_item_id, quickbooks_account_id")
+    .select("entity_id, plaid_item_id, quickbooks_account_id, quickbooks_item_id")
     .is("archived_at", null);
-  const accounts: { entity_id: string; plaid_item_id: string | null; quickbooks_account_id: string | null }[] = accountRows ?? [];
+  const accounts: { entity_id: string; plaid_item_id: string | null; quickbooks_account_id: string | null; quickbooks_item_id: string | null }[] = accountRows ?? [];
 
   const itemIds = [...new Set(accounts.map((a) => a.plaid_item_id).filter(Boolean))] as string[];
   const { data: itemRows } = itemIds.length
@@ -61,19 +61,24 @@ export default async function EntitiesPage() {
   const lastPlaidSync = new Map<string, string>();
   for (const j of (jobRows ?? []) as any[]) if (j.plaid_item_id && !lastPlaidSync.has(j.plaid_item_id)) lastPlaidSync.set(j.plaid_item_id, j.completed_at);
 
-  const { data: qb } = membership
-    ? await supabase.from("quickbooks_items").select("last_synced_at").eq("organization_id", membership.organizationId).maybeSingle()
-    : { data: null };
+  const { data: qbRows } = membership
+    ? await supabase.from("quickbooks_items").select("id, entity_id, last_synced_at").eq("organization_id", membership.organizationId)
+    : { data: [] };
+  const qbItems: { id: string; entity_id: string | null; last_synced_at: string | null }[] = qbRows ?? [];
 
   const summaries = new Map(
     entities.map((e) => {
       const own = accounts.filter((a) => a.entity_id === e.id);
       const bankItems = [...new Set(own.map((a) => a.plaid_item_id).filter(Boolean))] as string[];
       const liveBanks = bankItems.filter((i) => !disconnected.has(i));
-      const hasQuickBooks = own.some((a) => a.quickbooks_account_id);
+      // Same lookup order the sync uses: the entity's own connection, else the one its accounts
+      // came from, else a shared organization-wide connection.
+      const boundIds = new Set(own.map((a) => a.quickbooks_item_id).filter(Boolean) as string[]);
+      const qb = qbItems.find((i) => i.entity_id === e.id) ?? qbItems.find((i) => boundIds.has(i.id)) ?? null;
+      const hasQuickBooks = !!qb || own.some((a) => a.quickbooks_account_id);
       const syncTimes = [
         ...liveBanks.map((i) => lastPlaidSync.get(i)).filter(Boolean),
-        ...(hasQuickBooks && qb?.last_synced_at ? [qb.last_synced_at] : []),
+        ...(qb?.last_synced_at ? [qb.last_synced_at] : []),
       ] as string[];
       syncTimes.sort();
       return [

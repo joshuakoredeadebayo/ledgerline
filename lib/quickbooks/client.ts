@@ -11,6 +11,9 @@ const REVOKE_URL = "https://developer.api.intuit.com/v2/oauth2/tokens/revoke";
 // across the OAuth redirect round trip to Intuit and back.
 export const QUICKBOOKS_STATE_COOKIE = "qb_oauth_state";
 
+// Carries which entity the connection is being made for (if any) across the same round trip.
+export const QUICKBOOKS_ENTITY_COOKIE = "qb_oauth_entity";
+
 function apiBaseUrl(): string {
   return process.env.QUICKBOOKS_ENV === "production"
     ? "https://quickbooks.api.intuit.com"

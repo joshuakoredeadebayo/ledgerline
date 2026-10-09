@@ -12,6 +12,7 @@ import {
   type QuickBooksItemRow,
 } from "@/lib/quickbooks/client";
 import { getOrCreateReconciliationPeriod, recomputeReconciliationStatus } from "@/lib/reconciliation-status";
+import { mapBillPayment, mapJournalEntry, mapPayment, mapTransfer, type LedgerRow } from "@/lib/quickbooks/transactions";
 
 export interface QuickBooksConnection {
   id: string;
@@ -19,43 +20,69 @@ export interface QuickBooksConnection {
   realmId: string;
   status: string;
   createdAt: string;
+  lastSyncedAt: string | null;
+  /** The entity this connection belongs to, or null for a shared, organization-wide connection. */
+  entityId: string | null;
 }
 
-export async function getQuickBooksConnection(): Promise<QuickBooksConnection | null> {
+/** Every QuickBooks connection in the organization (one per linked company). */
+export async function listQuickBooksConnections(): Promise<QuickBooksConnection[]> {
   const membership = await getCurrentMembership();
-  if (!membership) return null;
+  if (!membership) return [];
 
-  const supabase = await createClient();
+  const supabase = (await createClient()) as any;
   const { data } = await supabase
     .from("quickbooks_items")
-    .select("id, company_name, realm_id, status, created_at")
+    .select("id, company_name, realm_id, status, created_at, last_synced_at, entity_id")
     .eq("organization_id", membership.organizationId)
-    .maybeSingle();
+    .order("created_at", { ascending: true });
 
-  if (!data) return null;
-
-  return {
-    id: data.id,
-    companyName: data.company_name,
-    realmId: data.realm_id,
-    status: data.status,
-    createdAt: data.created_at,
-  };
+  return ((data ?? []) as any[]).map((row) => ({
+    id: row.id,
+    companyName: row.company_name,
+    realmId: row.realm_id,
+    status: row.status,
+    createdAt: row.created_at,
+    lastSyncedAt: row.last_synced_at,
+    entityId: row.entity_id,
+  }));
 }
 
-// Internal helper — fetches the full connection row (tokens included)
-// for the org's single QuickBooks connection. Ledgerline's design
-// deliberately treats one QuickBooks connection per org as covering
-// potentially several entities, the same way Plaid Items work — so
-// this stays a single lookup rather than a list.
-async function getConnectionForOrg(organizationId: string): Promise<QuickBooksItemRow | null> {
-  const supabase = await createClient();
+/**
+ * Finds the QuickBooks connection an entity should use, in this order:
+ *   1. a connection made specifically for this entity;
+ *   2. the connection its already-imported QuickBooks accounts came from (so an entity
+ *      never loses access to accounts it has, even if connections are rearranged);
+ *   3. a shared, organization-wide connection (the original single-connection setup).
+ * Everything that talks to QuickBooks goes through this one function, so the choice of
+ * connection lives in exactly one place.
+ */
+async function getConnectionForEntity(organizationId: string, entityId: string): Promise<QuickBooksItemRow | null> {
+  const supabase = (await createClient()) as any;
   const { data } = await supabase
     .from("quickbooks_items")
-    .select("id, realm_id, access_token, refresh_token, access_token_expires_at")
+    .select("id, realm_id, access_token, refresh_token, access_token_expires_at, entity_id")
     .eq("organization_id", organizationId)
-    .maybeSingle();
-  return data as QuickBooksItemRow | null;
+    .order("created_at", { ascending: true });
+  const items = (data ?? []) as (QuickBooksItemRow & { entity_id: string | null })[];
+  if (items.length === 0) return null;
+
+  const own = items.find((i) => i.entity_id === entityId);
+  if (own) return own;
+
+  const { data: bound } = await supabase
+    .from("accounts")
+    .select("quickbooks_item_id")
+    .eq("entity_id", entityId)
+    .not("quickbooks_item_id", "is", null)
+    .limit(1);
+  const boundId = bound?.[0]?.quickbooks_item_id as string | undefined;
+  if (boundId) {
+    const viaAccounts = items.find((i) => i.id === boundId);
+    if (viaAccounts) return viaAccounts;
+  }
+
+  return items.find((i) => i.entity_id === null) ?? null;
 }
 
 // Duplicated from lib/actions/entities.ts (and lib/actions/plaid.ts,
@@ -105,10 +132,23 @@ export async function importQuickBooksAccounts(entityId: string): Promise<{ erro
 
   assertPermission(membership.role, "entities.manage");
 
-  const item = await getConnectionForOrg(membership.organizationId);
-  if (!item) return { error: "No QuickBooks connection found. Connect QuickBooks in Settings first." };
+  const item = await getConnectionForEntity(membership.organizationId, entityId);
+  if (!item) return { error: "This entity isn't connected to QuickBooks yet. Use “Connect QuickBooks” on this page first." };
 
   const supabase = await createClient();
+
+  // QuickBooks account ids are only unique within one company. An entity can't mix accounts
+  // from two companies, or ids from different books would collide.
+  const { data: otherCompany } = await (supabase as any)
+    .from("accounts")
+    .select("id")
+    .eq("entity_id", entityId)
+    .not("quickbooks_item_id", "is", null)
+    .neq("quickbooks_item_id", item.id)
+    .limit(1);
+  if (otherCompany && otherCompany.length > 0) {
+    return { error: "This entity already has accounts from a different QuickBooks company, so it can't import from this one." };
+  }
 
   let accessToken: string;
   let qbAccounts: any[];
@@ -213,47 +253,50 @@ export async function importQuickBooksAccounts(entityId: string): Promise<{ erro
 }
 
 /**
- * Pulls Purchases and Deposits from QuickBooks since the connection's
- * last sync, and upserts them into `transactions`. Scoped to just
- * these two transaction types for now — both map cleanly to one
- * row-per-account-per-amount, unlike Journal Entries (which can touch
- * several accounts in a single entry) or Invoices/Payments/Transfers,
- * which are real QuickBooks activity but need their own handling and
- * are intentionally left for a follow-up rather than built untested
- * alongside everything else here.
+ * Pulls ledger activity from QuickBooks since the connection's last sync and upserts it
+ * into `transactions`. Covers Purchases and Deposits plus the types that move money
+ * through a bank or card account without being either: Transfers, Bill Payments,
+ * customer Payments and Journal Entries (one row per bank/card line).
+ *
+ * Pass { fullResync: true } to ignore the last-sync time and re-pull the last 90 days.
+ * Safe to repeat: every row has a stable key, so existing rows are updated, not duplicated.
+ * Use it once after upgrading, to bring in older activity of the newly supported types.
+ *
+ * Invoices and Bills aren't synced: they record what is owed, not money moving through
+ * an account, so there is no bank line to match them against.
  */
 export async function syncQuickBooksTransactions(
-  entityId: string
+  entityId: string,
+  options: { fullResync?: boolean } = {}
 ): Promise<{ error?: string; syncedCount?: number; fetchedFromQuickBooks?: number; unmatchedAccountIds?: string[] }> {
   const membership = await getCurrentMembership();
   if (!membership) return { error: "Not signed in." };
 
   assertPermission(membership.role, "entities.manage");
 
-  const item = await getConnectionForOrg(membership.organizationId);
-  if (!item) return { error: "No QuickBooks connection found. Connect QuickBooks in Settings first." };
+  const item = await getConnectionForEntity(membership.organizationId, entityId);
+  if (!item) return { error: "This entity isn't connected to QuickBooks yet. Use “Connect QuickBooks” on this page first." };
 
-  const supabase = await createClient();
+  const supabase = (await createClient()) as any;
 
-  const { data: fullItem } = await supabase
-    .from("quickbooks_items")
-    .select("last_synced_at")
-    .eq("id", item.id)
-    .single();
+  const { data: fullItem } = await supabase.from("quickbooks_items").select("last_synced_at").eq("id", item.id).single();
 
   // First sync pulls the last 90 days rather than all-time history —
   // matches the general shape of Plaid's sandbox default window, and
   // avoids an unbounded first pull on a company with years of data.
-  const since = fullItem?.last_synced_at
-    ? new Date(fullItem.last_synced_at)
-    : new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+  const since =
+    fullItem?.last_synced_at && !options.fullResync
+      ? new Date(fullItem.last_synced_at)
+      : new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
   const sinceIso = since.toISOString();
 
   const { data: accountRows } = await supabase
     .from("accounts")
-    .select("id, entity_id, quickbooks_account_id")
+    .select("id, entity_id, quickbooks_account_id, is_reconcilable")
     .eq("quickbooks_item_id", item.id);
-  const accountMap = new Map((accountRows ?? []).map((a) => [a.quickbooks_account_id, { id: a.id, entityId: a.entity_id }]));
+  const accountMap = new Map<string, { id: string; entityId: string; reconcilable: boolean }>(
+    ((accountRows ?? []) as any[]).map((a) => [a.quickbooks_account_id, { id: a.id, entityId: a.entity_id, reconcilable: !!a.is_reconcilable }])
+  );
 
   let accessToken: string;
   try {
@@ -267,14 +310,37 @@ export async function syncQuickBooksTransactions(
   let fetchedFromQuickBooks = 0;
   let syncedCount = 0;
 
+  const queryType = (type: string) =>
+    queryQuickBooks(item.realm_id, accessToken, `SELECT * FROM ${type} WHERE Metadata.LastUpdatedTime > '${sinceIso}' MAXRESULTS 1000`);
+
   try {
-    const [purchases, deposits] = await Promise.all([
-      queryQuickBooks(item.realm_id, accessToken, `SELECT * FROM Purchase WHERE Metadata.LastUpdatedTime > '${sinceIso}' MAXRESULTS 1000`),
-      queryQuickBooks(item.realm_id, accessToken, `SELECT * FROM Deposit WHERE Metadata.LastUpdatedTime > '${sinceIso}' MAXRESULTS 1000`),
+    const [purchases, deposits, transfers, billPayments, payments, journalEntries] = await Promise.all([
+      queryType("Purchase"),
+      queryType("Deposit"),
+      queryType("Transfer"),
+      queryType("BillPayment"),
+      queryType("Payment"),
+      queryType("JournalEntry"),
     ]);
-    fetchedFromQuickBooks = purchases.length + deposits.length;
+    fetchedFromQuickBooks =
+      purchases.length + deposits.length + transfers.length + billPayments.length + payments.length + journalEntries.length;
 
     const upsertRows: any[] = [];
+
+    const addRow = (qbAccountId: string, row: Omit<LedgerRow, "qbAccountId">, mapped: { id: string; entityId: string }) => {
+      affectedAccounts.set(mapped.id, { entityId: mapped.entityId });
+      upsertRows.push({
+        entity_id: mapped.entityId,
+        account_id: mapped.id,
+        source: "quickbooks",
+        amount: row.amount,
+        currency: row.currency,
+        transaction_date: row.date,
+        description: row.description,
+        raw_payload: row.raw,
+        quickbooks_transaction_id: row.key,
+      });
+    };
 
     for (const purchase of purchases) {
       const qbAccountId = purchase.AccountRef?.value;
@@ -283,22 +349,20 @@ export async function syncQuickBooksTransactions(
         if (qbAccountId) unmatchedAccountIds.add(qbAccountId);
         continue;
       }
-      affectedAccounts.set(mapped.id, { entityId: mapped.entityId });
-      upsertRows.push({
-        entity_id: mapped.entityId,
-        account_id: mapped.id,
-        source: "quickbooks",
-        // Positive = money leaving the account — matches Plaid's
-        // convention (which QuickBooks doesn't natively share; QB's
-        // TotalAmt is always unsigned, so direction is applied here
-        // based on transaction type).
-        amount: purchase.TotalAmt,
-        currency: purchase.CurrencyRef?.value ?? "USD",
-        transaction_date: purchase.TxnDate,
-        description: purchase.PrivateNote || purchase.EntityRef?.name || "QuickBooks Purchase",
-        raw_payload: purchase,
-        quickbooks_transaction_id: `purchase-${purchase.Id}`,
-      });
+      addRow(
+        qbAccountId,
+        {
+          // Positive = money leaving the account — matches Plaid's convention (QuickBooks'
+          // TotalAmt is always unsigned, so direction is applied here based on transaction type).
+          amount: purchase.TotalAmt,
+          currency: purchase.CurrencyRef?.value ?? "USD",
+          date: purchase.TxnDate,
+          description: purchase.PrivateNote || purchase.EntityRef?.name || "QuickBooks Purchase",
+          key: `purchase-${purchase.Id}`,
+          raw: purchase,
+        },
+        mapped
+      );
     }
 
     for (const deposit of deposits) {
@@ -308,18 +372,43 @@ export async function syncQuickBooksTransactions(
         if (qbAccountId) unmatchedAccountIds.add(qbAccountId);
         continue;
       }
-      affectedAccounts.set(mapped.id, { entityId: mapped.entityId });
-      upsertRows.push({
-        entity_id: mapped.entityId,
-        account_id: mapped.id,
-        source: "quickbooks",
-        amount: -deposit.TotalAmt, // negative = money coming in
-        currency: deposit.CurrencyRef?.value ?? "USD",
-        transaction_date: deposit.TxnDate,
-        description: deposit.PrivateNote || "QuickBooks Deposit",
-        raw_payload: deposit,
-        quickbooks_transaction_id: `deposit-${deposit.Id}`,
-      });
+      addRow(
+        qbAccountId,
+        {
+          amount: -deposit.TotalAmt, // negative = money coming in
+          currency: deposit.CurrencyRef?.value ?? "USD",
+          date: deposit.TxnDate,
+          description: deposit.PrivateNote || "QuickBooks Deposit",
+          key: `deposit-${deposit.Id}`,
+          raw: deposit,
+        },
+        mapped
+      );
+    }
+
+    // The newer types only land on accounts that are actually reconciled against a feed
+    // (bank and card accounts), so a journal line to an expense account, or a payment
+    // parked in Undeposited Funds, doesn't create noise.
+    const extraRows: LedgerRow[] = [
+      ...transfers.flatMap(mapTransfer),
+      ...billPayments.flatMap(mapBillPayment),
+      ...payments.flatMap(mapPayment),
+    ];
+    for (const row of extraRows) {
+      const mapped = accountMap.get(row.qbAccountId);
+      if (!mapped) {
+        unmatchedAccountIds.add(row.qbAccountId);
+        continue;
+      }
+      if (!mapped.reconcilable) continue;
+      addRow(row.qbAccountId, row, mapped);
+    }
+    for (const row of journalEntries.flatMap(mapJournalEntry)) {
+      const mapped = accountMap.get(row.qbAccountId);
+      // Most journal lines hit income, expense or equity accounts we never import,
+      // so a missing account here is normal and isn't reported as a problem.
+      if (!mapped || !mapped.reconcilable) continue;
+      addRow(row.qbAccountId, row, mapped);
     }
 
     if (upsertRows.length > 0) {
@@ -355,20 +444,22 @@ export async function syncQuickBooksTransactions(
   }
 }
 
-export async function disconnectQuickBooks(): Promise<{ error?: string }> {
+/** Disconnects one QuickBooks company. Accounts and transactions already imported stay in Ledgerline. */
+export async function disconnectQuickBooks(connectionId: string): Promise<{ error?: string }> {
   const membership = await getCurrentMembership();
   if (!membership) return { error: "Not signed in." };
 
   assertPermission(membership.role, "org.manage_integrations");
 
-  const supabase = await createClient();
+  const supabase = (await createClient()) as any;
   const { data: item } = await supabase
     .from("quickbooks_items")
-    .select("id, access_token")
+    .select("id, access_token, company_name, entity_id")
+    .eq("id", connectionId)
     .eq("organization_id", membership.organizationId)
     .maybeSingle();
 
-  if (!item) return { error: "No QuickBooks connection found." };
+  if (!item) return { error: "QuickBooks connection not found." };
 
   // Best-effort: also tell Intuit to revoke the token, so this app
   // stops showing as connected on QuickBooks' side too. If this call
@@ -380,6 +471,17 @@ export async function disconnectQuickBooks(): Promise<{ error?: string }> {
   const { error } = await supabase.from("quickbooks_items").delete().eq("id", item.id);
   if (error) return { error: error.message };
 
+  await supabase.from("audit_log").insert({
+    organization_id: membership.organizationId,
+    actor_id: membership.userId,
+    action: "quickbooks.disconnected",
+    target_table: "quickbooks_items",
+    target_id: item.id,
+    before: { company: item.company_name, entity_id: item.entity_id },
+    after: null,
+  });
+
   revalidatePath("/settings/integrations");
+  revalidatePath("/entities", "layout");
   return {};
 }
