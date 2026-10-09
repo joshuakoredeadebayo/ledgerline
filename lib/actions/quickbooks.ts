@@ -267,8 +267,17 @@ export async function importQuickBooksAccounts(entityId: string): Promise<{ erro
  */
 export async function syncQuickBooksTransactions(
   entityId: string,
-  options: { fullResync?: boolean } = {}
-): Promise<{ error?: string; syncedCount?: number; fetchedFromQuickBooks?: number; unmatchedAccountIds?: string[] }> {
+  options: { fullResync?: boolean; allHistory?: boolean } = {}
+): Promise<{
+  error?: string;
+  syncedCount?: number;
+  fetchedFromQuickBooks?: number;
+  unmatchedAccountIds?: string[];
+  /** Per transaction type: how many QuickBooks returned, and how many were saved to Ledgerline. */
+  breakdown?: { type: string; fetched: number; saved: number }[];
+  /** Rows QuickBooks returned for an imported account that isn't switched on for reconciliation. */
+  skippedNotReconcilable?: number;
+}> {
   const membership = await getCurrentMembership();
   if (!membership) return { error: "Not signed in." };
 
@@ -284,8 +293,10 @@ export async function syncQuickBooksTransactions(
   // First sync pulls the last 90 days rather than all-time history —
   // matches the general shape of Plaid's sandbox default window, and
   // avoids an unbounded first pull on a company with years of data.
-  const since =
-    fullItem?.last_synced_at && !options.fullResync
+  // "All history" removes the time limit entirely (QuickBooks keeps 1000 results per type per pull).
+  const since = options.allHistory
+    ? new Date("2000-01-01T00:00:00Z")
+    : fullItem?.last_synced_at && !options.fullResync
       ? new Date(fullItem.last_synced_at)
       : new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
   const sinceIso = since.toISOString();
@@ -309,6 +320,8 @@ export async function syncQuickBooksTransactions(
   const unmatchedAccountIds = new Set<string>();
   let fetchedFromQuickBooks = 0;
   let syncedCount = 0;
+  let skippedNotReconcilable = 0;
+  const savedByType = new Map<string, number>();
 
   const queryType = (type: string) =>
     queryQuickBooks(item.realm_id, accessToken, `SELECT * FROM ${type} WHERE Metadata.LastUpdatedTime > '${sinceIso}' MAXRESULTS 1000`);
@@ -327,7 +340,8 @@ export async function syncQuickBooksTransactions(
 
     const upsertRows: any[] = [];
 
-    const addRow = (qbAccountId: string, row: Omit<LedgerRow, "qbAccountId">, mapped: { id: string; entityId: string }) => {
+    const addRow = (type: string, row: Omit<LedgerRow, "qbAccountId">, mapped: { id: string; entityId: string }) => {
+      savedByType.set(type, (savedByType.get(type) ?? 0) + 1);
       affectedAccounts.set(mapped.id, { entityId: mapped.entityId });
       upsertRows.push({
         entity_id: mapped.entityId,
@@ -350,7 +364,7 @@ export async function syncQuickBooksTransactions(
         continue;
       }
       addRow(
-        qbAccountId,
+        "Purchases",
         {
           // Positive = money leaving the account — matches Plaid's convention (QuickBooks'
           // TotalAmt is always unsigned, so direction is applied here based on transaction type).
@@ -373,7 +387,7 @@ export async function syncQuickBooksTransactions(
         continue;
       }
       addRow(
-        qbAccountId,
+        "Deposits",
         {
           amount: -deposit.TotalAmt, // negative = money coming in
           currency: deposit.CurrencyRef?.value ?? "USD",
@@ -389,26 +403,27 @@ export async function syncQuickBooksTransactions(
     // The newer types only land on accounts that are actually reconciled against a feed
     // (bank and card accounts), so a journal line to an expense account, or a payment
     // parked in Undeposited Funds, doesn't create noise.
-    const extraRows: LedgerRow[] = [
-      ...transfers.flatMap(mapTransfer),
-      ...billPayments.flatMap(mapBillPayment),
-      ...payments.flatMap(mapPayment),
+    const extraTypes: { type: string; rows: LedgerRow[]; reportMissing: boolean }[] = [
+      { type: "Transfers", rows: transfers.flatMap(mapTransfer), reportMissing: true },
+      { type: "Bill payments", rows: billPayments.flatMap(mapBillPayment), reportMissing: true },
+      { type: "Customer payments", rows: payments.flatMap(mapPayment), reportMissing: true },
+      // Most journal lines hit income, expense or equity accounts we never import, so a
+      // missing account here is normal and isn't reported as a problem.
+      { type: "Journal entries", rows: journalEntries.flatMap(mapJournalEntry), reportMissing: false },
     ];
-    for (const row of extraRows) {
-      const mapped = accountMap.get(row.qbAccountId);
-      if (!mapped) {
-        unmatchedAccountIds.add(row.qbAccountId);
-        continue;
+    for (const { type, rows, reportMissing } of extraTypes) {
+      for (const row of rows) {
+        const mapped = accountMap.get(row.qbAccountId);
+        if (!mapped) {
+          if (reportMissing) unmatchedAccountIds.add(row.qbAccountId);
+          continue;
+        }
+        if (!mapped.reconcilable) {
+          skippedNotReconcilable++;
+          continue;
+        }
+        addRow(type, row, mapped);
       }
-      if (!mapped.reconcilable) continue;
-      addRow(row.qbAccountId, row, mapped);
-    }
-    for (const row of journalEntries.flatMap(mapJournalEntry)) {
-      const mapped = accountMap.get(row.qbAccountId);
-      // Most journal lines hit income, expense or equity accounts we never import,
-      // so a missing account here is normal and isn't reported as a problem.
-      if (!mapped || !mapped.reconcilable) continue;
-      addRow(row.qbAccountId, row, mapped);
     }
 
     if (upsertRows.length > 0) {
@@ -438,7 +453,21 @@ export async function syncQuickBooksTransactions(
     revalidatePath(`/entities/${entityId}`);
     revalidatePath("/reconciliation");
     revalidatePath("/dashboard");
-    return { syncedCount, fetchedFromQuickBooks, unmatchedAccountIds: [...unmatchedAccountIds] };
+    const fetchedByType: [string, number][] = [
+      ["Purchases", purchases.length],
+      ["Deposits", deposits.length],
+      ["Transfers", transfers.length],
+      ["Bill payments", billPayments.length],
+      ["Customer payments", payments.length],
+      ["Journal entries", journalEntries.length],
+    ];
+    return {
+      syncedCount,
+      fetchedFromQuickBooks,
+      unmatchedAccountIds: [...unmatchedAccountIds],
+      breakdown: fetchedByType.map(([type, fetched]) => ({ type, fetched, saved: savedByType.get(type) ?? 0 })),
+      skippedNotReconcilable,
+    };
   } catch (err: any) {
     return { error: err?.message ?? "QuickBooks sync failed unexpectedly." };
   }
