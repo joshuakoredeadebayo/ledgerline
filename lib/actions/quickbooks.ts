@@ -267,7 +267,7 @@ export async function importQuickBooksAccounts(entityId: string): Promise<{ erro
  */
 export async function syncQuickBooksTransactions(
   entityId: string,
-  options: { fullResync?: boolean; allHistory?: boolean } = {}
+  options: { fullResync?: boolean } = {}
 ): Promise<{
   error?: string;
   syncedCount?: number;
@@ -293,10 +293,8 @@ export async function syncQuickBooksTransactions(
   // First sync pulls the last 90 days rather than all-time history —
   // matches the general shape of Plaid's sandbox default window, and
   // avoids an unbounded first pull on a company with years of data.
-  // "All history" removes the time limit entirely (QuickBooks keeps 1000 results per type per pull).
-  const since = options.allHistory
-    ? new Date("2000-01-01T00:00:00Z")
-    : fullItem?.last_synced_at && !options.fullResync
+  const since =
+    fullItem?.last_synced_at && !options.fullResync
       ? new Date(fullItem.last_synced_at)
       : new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
   const sinceIso = since.toISOString();

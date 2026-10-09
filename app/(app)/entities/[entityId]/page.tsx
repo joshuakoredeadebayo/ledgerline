@@ -15,8 +15,7 @@ import { AccountActions, type AccountForActions } from "@/components/entities/ac
 import { ConnectBankButton } from "@/components/plaid/connect-bank-button";
 import { DisconnectBankButton } from "@/components/plaid/disconnect-bank-button";
 import { SyncTransactionsButton } from "@/components/plaid/sync-transactions-button";
-import { ImportQuickBooksAccountsButton } from "@/components/quickbooks/import-accounts-button";
-import { SyncQuickBooksButton } from "@/components/quickbooks/sync-quickbooks-button";
+import { QuickBooksActions } from "@/components/quickbooks/quickbooks-actions";
 import { LinkAccountsForm } from "@/components/accounts/link-accounts-form";
 import { getLinkableAccounts } from "@/lib/actions/account-linking";
 
@@ -229,12 +228,16 @@ export default async function EntityDetailPage({
       </section>
 
       {canManage && (
-        <div className="flex flex-wrap gap-3">
-          <CreateAccountForm entityId={entity.id} />
-          <ConnectBankButton entities={[{ id: entity.id, name: entity.name }]} presetEntityId={entity.id} />
-          {hasLivePlaid && <SyncTransactionsButton entityId={entity.id} />}
-          {qb && <ImportQuickBooksAccountsButton entityId={entity.id} />}
-          {qb && hasQuickBooksAccounts && <SyncQuickBooksButton entityId={entity.id} />}
+        <div className="space-y-4">
+          {/* Bank and QuickBooks actions share one row; their results open underneath it. */}
+          <div className="flex flex-wrap items-start gap-3">
+            <ConnectBankButton entities={[{ id: entity.id, name: entity.name }]} presetEntityId={entity.id} />
+            {hasLivePlaid && <SyncTransactionsButton entityId={entity.id} />}
+            {qb && <QuickBooksActions entityId={entity.id} canSync={hasQuickBooksAccounts} />}
+          </div>
+          <div className="max-w-xl">
+            <CreateAccountForm entityId={entity.id} />
+          </div>
         </div>
       )}
       {canManage && <LinkAccountsForm entityId={entity.id} accounts={linkableAccounts} />}
