@@ -503,11 +503,18 @@ export async function restoreTransaction(transactionId: string, accountId: strin
   const supabase = (await createClient()) as any;
   const { data: txn } = await supabase
     .from("transactions")
-    .select("id, entity_id, account_id, status, transaction_date")
+    .select("id, entity_id, account_id, status, transaction_date, raw_payload")
     .eq("id", transactionId)
     .maybeSingle();
   if (!txn) return { error: "Transaction not found." };
   if (txn.status !== "excluded") return {};
+
+  // A ledger item that came from a journal entry which has since been reversed must stay gone.
+  const journalEntryId = (txn.raw_payload as { journal_entry_id?: string } | null)?.journal_entry_id;
+  if (journalEntryId) {
+    const { data: entry } = await supabase.from("journal_entries").select("status").eq("id", journalEntryId).maybeSingle();
+    if (entry?.status === "reversed") return { error: "This item came from a journal entry that was reversed, so it can't be restored." };
+  }
 
   const { data: recon } = await supabase
     .from("reconciliations")

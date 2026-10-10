@@ -13,11 +13,14 @@ export function ExceptionActions({
   status,
   canAct,
   reviewHref,
+  adjustHref,
 }: {
   exceptionId: string;
   status: "open" | "resolved" | "dismissed";
   canAct: boolean;
   reviewHref: string;
+  /** Opens a pre-filled journal entry for a bank item that hasn't been booked yet. */
+  adjustHref?: string;
 }) {
   const [mode, setMode] = useState<ExceptionOutcome | null>(null);
   const [reason, setReason] = useState("");
@@ -50,6 +53,11 @@ export function ExceptionActions({
         <Link href={reviewHref} className="inline-flex h-8 items-center rounded px-3 text-sm font-medium text-accent-600 hover:bg-accent-50">
           Review
         </Link>
+        {canAct && status === "open" && adjustHref && (
+          <Link href={adjustHref} className="inline-flex h-8 items-center rounded px-3 text-sm font-medium text-accent-600 hover:bg-accent-50" title="Record a journal entry for this bank item">
+            Adjust
+          </Link>
+        )}
         {canAct && status === "open" && (
           <>
             <Button type="button" size="sm" variant="secondary" onClick={() => open("resolved")}>

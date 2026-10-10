@@ -25,6 +25,27 @@ const TABS = [
 
 type Tab = (typeof TABS)[number]["value"];
 
+/**
+ * A bank transaction nobody has booked yet (a fee, interest) is fixed with an adjusting entry:
+ * the link opens a new draft with the bank-side line already filled in. Ledger-side items don't
+ * get one, since they are already in the books.
+ */
+function adjustHref(t: any): string | undefined {
+  if (!t || (t.source !== "plaid" && t.raw_payload?.side !== "bank")) return undefined;
+  const amount = Math.abs(Number(t.amount));
+  if (!amount) return undefined;
+  const params = new URLSearchParams({
+    entity: t.entity_id,
+    account: t.account_id,
+    amount: String(amount),
+    // Positive bank amounts are money out, which is a credit to the bank account.
+    direction: Number(t.amount) > 0 ? "credit" : "debit",
+    date: String(t.transaction_date).slice(0, 10),
+    description: t.description ?? "",
+  });
+  return `/journal-entries/new?${params.toString()}`;
+}
+
 const fmtDate = (iso: string) =>
   new Date(`${iso.slice(0, 10)}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 
@@ -43,7 +64,7 @@ export default async function ExceptionsPage({ searchParams }: { searchParams: P
   const { data, count } = await supabase
     .from("exceptions")
     .select(
-      "id, exception_type, severity, status, created_at, resolved_at, resolved_by, resolution_reason, resolution_note, transactions(id, amount, currency, transaction_date, description, account_id, accounts(name, entities(name)))",
+      "id, exception_type, severity, status, created_at, resolved_at, resolved_by, resolution_reason, resolution_note, transactions(id, amount, currency, transaction_date, description, account_id, entity_id, source, raw_payload, accounts(name, entities(name)))",
       { count: "exact" }
     )
     .eq("status", tab)
@@ -149,7 +170,7 @@ export default async function ExceptionsPage({ searchParams }: { searchParams: P
                       )}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <ExceptionActions exceptionId={e.id} status={e.status} canAct={canAct} reviewHref={href} />
+                      <ExceptionActions exceptionId={e.id} status={e.status} canAct={canAct} reviewHref={href} adjustHref={adjustHref(t)} />
                     </td>
                   </tr>
                 );

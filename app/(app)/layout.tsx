@@ -12,9 +12,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <div className="flex h-screen bg-ink-50">
+    <div className="app-shell flex h-screen bg-ink-50">
       <Sidebar role={membership.role} />
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="app-column flex flex-1 flex-col overflow-hidden">
         <Topbar
           organizationName={membership.organizationName}
           email={membership.email}

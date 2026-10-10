@@ -55,3 +55,16 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* Printing a report: drop the app chrome and let the page flow across as many sheets as it needs. */
+@media print {
+  html, body, .app-shell, .app-column {
+    height: auto !important;
+    overflow: visible !important;
+    display: block !important;
+    background: #ffffff !important;
+  }
+  aside, header { display: none !important; }
+  main { overflow: visible !important; padding: 0 !important; }
+  .print-avoid-break { break-inside: avoid; }
+}
