@@ -132,6 +132,14 @@ export function AccountActions({ account, canUnlink }: { account: AccountForActi
             Reconcile
           </Link>
         )}
+        {!account.archived && account.isReconcilable && (
+          <Link
+            href={`/reconciliation/${account.id}/import`}
+            className="inline-flex h-8 items-center rounded px-3 text-sm font-medium text-ink-600 hover:bg-ink-50 hover:text-ink-900"
+          >
+            Import
+          </Link>
+        )}
         {!account.archived && <EditAccountDialog account={account} />}
         {!account.archived && account.linked && canUnlink && (
           <Button type="button" size="sm" variant="ghost" disabled={pending} onClick={unlink}>

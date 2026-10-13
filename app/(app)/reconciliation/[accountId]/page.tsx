@@ -239,6 +239,17 @@ export default async function MatchingWorkspacePage({
         />
       )}
 
+      {canMatch && (
+        <div>
+          <Link
+            href={`/reconciliation/${accountId}/import`}
+            className="inline-flex h-9 items-center gap-2 rounded border border-ink-200 bg-white px-4 text-sm font-medium text-ink-800 hover:bg-ink-50"
+          >
+            Import a statement (CSV)
+          </Link>
+        </div>
+      )}
+
       {canMatch && periodSummary?.status !== "finalized" && testToolsEnabled() && (
         <AddManualTransactionForm accountId={accountId} entityId={account.entity_id} />
       )}
