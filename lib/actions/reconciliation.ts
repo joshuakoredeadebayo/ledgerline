@@ -9,6 +9,8 @@ import { getOrCreateReconciliationPeriod, recomputeReconciliationStatus } from "
 import { refreshCloseChecklistIfPeriodExists } from "@/lib/close-period-status";
 import { testToolsEnabled } from "@/lib/test-tools";
 import { EXCLUDE_REASONS } from "@/lib/exception-reasons";
+import { computeBalanceRec, kindForAccountType } from "@/lib/balance-rec";
+import { loadBalanceRecItems } from "@/lib/balance-rec-loader";
 
 export type ActionState = { error?: string; fieldErrors?: Record<string, string> } | null;
 
@@ -277,9 +279,9 @@ export async function addManualTransaction(_prev: ActionState, formData: FormDat
  * difference, nothing left unresolved). Locks the period: recomputation
  * skips finalized periods, so nothing can silently change it afterward.
  */
-export async function finalizeReconciliation(reconciliationId: string, accountId: string) {
+export async function finalizeReconciliation(reconciliationId: string, accountId: string): Promise<{ error?: string }> {
   const membership = await getCurrentMembership();
-  if (!membership) throw new Error("Not signed in.");
+  if (!membership) return { error: "Not signed in." };
   assertPermission(membership.role, "reconciliation.finalize");
 
   // Cast to `any`: the reconciliations table and the close_checklist_items.is_auto
@@ -289,13 +291,30 @@ export async function finalizeReconciliation(reconciliationId: string, accountId
   const supabase = (await createClient()) as any;
   const { data: recon } = await supabase
     .from("reconciliations")
-    .select("id, entity_id, status, period_start, period_end")
+    .select("id, entity_id, status, period_start, period_end, statement_closing_balance, book_closing_balance")
     .eq("id", reconciliationId)
     .single();
 
-  if (!recon) throw new Error("Reconciliation period not found.");
+  if (!recon) return { error: "Reconciliation period not found." };
   if (recon.status !== "reconciled") {
-    throw new Error("This period can only be finalized once it's fully reconciled.");
+    return { error: "This period can only be finalized once it's fully reconciled." };
+  }
+
+  // If the statement and book balances were entered, the balance reconciliation has to agree too.
+  if (recon.statement_closing_balance !== null && recon.book_closing_balance !== null) {
+    const { data: acct } = await supabase.from("accounts").select("account_type").eq("id", accountId).maybeSingle();
+    const items = await loadBalanceRecItems(supabase, accountId, recon.period_start, recon.period_end);
+    const rec = computeBalanceRec({
+      kind: kindForAccountType(acct?.account_type),
+      statementClosing: Number(recon.statement_closing_balance),
+      bookClosing: Number(recon.book_closing_balance),
+      items,
+    });
+    if (!rec.reconciled) {
+      return {
+        error: `The balance reconciliation is out by ${Math.abs(rec.difference).toFixed(2)}, so this period can't be finalized yet. Check the balances you entered, or look for a missing or incorrect transaction.`,
+      };
+    }
   }
 
   // An empty month has nothing to certify. Excluded transactions don't count as activity.
@@ -307,7 +326,7 @@ export async function finalizeReconciliation(reconciliationId: string, accountId
     .gte("transaction_date", recon.period_start)
     .lte("transaction_date", recon.period_end);
   if ((activityCount ?? 0) === 0) {
-    throw new Error("There are no transactions in this period, so there is nothing to finalize.");
+    return { error: "There are no transactions in this period, so there is nothing to finalize." };
   }
 
   await supabase
@@ -328,16 +347,17 @@ export async function finalizeReconciliation(reconciliationId: string, accountId
 
   revalidatePath(`/reconciliation/${accountId}`);
   revalidatePath("/close");
+  return {};
 }
 
 /** Reopen a finalized period under controlled permission — requires a documented reason, per audit best practice. */
-export async function reopenReconciliation(reconciliationId: string, accountId: string, reason: string) {
+export async function reopenReconciliation(reconciliationId: string, accountId: string, reason: string): Promise<{ error?: string }> {
   const membership = await getCurrentMembership();
-  if (!membership) throw new Error("Not signed in.");
+  if (!membership) return { error: "Not signed in." };
   assertPermission(membership.role, "reconciliation.finalize");
 
   if (!reason || reason.trim().length < 5) {
-    throw new Error("A documented reason is required to reopen a finalized period.");
+    return { error: "A documented reason is required to reopen a finalized period." };
   }
 
   // Cast to `any`: the reconciliations table and the close_checklist_items.is_auto
@@ -351,7 +371,7 @@ export async function reopenReconciliation(reconciliationId: string, accountId: 
     .eq("id", reconciliationId)
     .single();
 
-  if (!recon) throw new Error("Reconciliation period not found.");
+  if (!recon) return { error: "Reconciliation period not found." };
 
   await supabase
     .from("reconciliations")
@@ -372,6 +392,7 @@ export async function reopenReconciliation(reconciliationId: string, accountId: 
 
   revalidatePath(`/reconciliation/${accountId}`);
   revalidatePath("/close");
+  return {};
 }
 
 

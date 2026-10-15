@@ -1,4 +1,6 @@
 import { chunkList, fetchAll } from "@/lib/fetch-all";
+import { computeBalanceRec, kindForAccountType, type BalanceRec } from "@/lib/balance-rec";
+import { loadBalanceRecItems } from "@/lib/balance-rec-loader";
 
 export interface ReportTxn {
   id: string;
@@ -56,6 +58,8 @@ export interface ReconciliationReport {
   unresolved: ReportTxn[];
   excluded: ReportExcluded[];
   transactionCount: number;
+  /** The statement-to-books reconciliation, when both closing balances were entered. */
+  balanceRec: BalanceRec | null;
 }
 
 const sideOf = (t: { source: string; raw_payload: any }): "bank" | "ledger" => {
@@ -87,7 +91,7 @@ export function monthBounds(month: string): { start: string; end: string } {
 export async function loadReconciliationReport(supabase: any, accountId: string, month: string): Promise<ReconciliationReport | null> {
   const { data: account } = await supabase
     .from("accounts")
-    .select("id, name, code, entity_id, entities(name, currency)")
+    .select("id, name, code, account_type, entity_id, entities(name, currency)")
     .eq("id", accountId)
     .maybeSingle();
   if (!account) return null;
@@ -96,7 +100,7 @@ export async function loadReconciliationReport(supabase: any, accountId: string,
 
   const { data: recon } = await supabase
     .from("reconciliations")
-    .select("id, status, book_total, external_total, unexplained_difference, prepared_by, finalized_by, finalized_at, reopened_reason")
+    .select("id, status, book_total, external_total, unexplained_difference, prepared_by, finalized_by, finalized_at, reopened_reason, statement_closing_balance, book_closing_balance")
     .eq("account_id", accountId)
     .eq("period_start", start)
     .maybeSingle();
@@ -181,6 +185,16 @@ export async function loadReconciliationReport(supabase: any, accountId: string,
     }
   }
 
+  const balanceRec =
+    recon && recon.statement_closing_balance !== null && recon.book_closing_balance !== null
+      ? computeBalanceRec({
+          kind: kindForAccountType(account.account_type),
+          statementClosing: Number(recon.statement_closing_balance),
+          bookClosing: Number(recon.book_closing_balance),
+          items: await loadBalanceRecItems(supabase, accountId, start, end),
+        })
+      : null;
+
   return {
     account: {
       id: account.id,
@@ -210,6 +224,7 @@ export async function loadReconciliationReport(supabase: any, accountId: string,
     unresolved,
     excluded,
     transactionCount: txns.length,
+    balanceRec,
   };
 }
 

@@ -8,6 +8,7 @@ import { loadReconciliationReport, type ReportTxn } from "@/lib/reports/reconcil
 import { Badge, type BadgeStatus } from "@/components/ui/badge";
 import { EmptyState } from "@/components/shared/empty-state";
 import { PrintButton } from "@/components/reports/print-button";
+import { BalanceRecStatement } from "@/components/reports/balance-rec-statement";
 
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
 
@@ -200,6 +201,13 @@ export default async function ReconciliationReportPage({ searchParams }: { searc
               that span two months. Amounts count money going out as positive and money coming in as negative.
             </p>
           </section>
+
+          {report.balanceRec && (
+            <section className="print-avoid-break rounded-xl border border-ink-100 bg-white p-5 shadow-subtle print:shadow-none">
+              <h2 className="mb-3 text-[15px] font-semibold text-ink-900">Balance reconciliation</h2>
+              <BalanceRecStatement rec={report.balanceRec} currency={cur} />
+            </section>
+          )}
 
           <Section
             title="Matched"

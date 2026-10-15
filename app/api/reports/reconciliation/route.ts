@@ -32,6 +32,15 @@ export async function GET(request: Request) {
     ["Bank total", "", "", r?.externalTotal ?? "", "", "", "", "", "", "", ""],
     ["Unexplained difference", "", "", r?.difference ?? "", "", "", "", "", "", "", ""],
     ["Finalized by", r?.finalizedBy ? nameOf(r.finalizedBy) : "Not finalized", "", "", "", "", "", "", "", r?.finalizedAt ?? "", ""],
+    ...(report.balanceRec
+      ? [
+          ["Statement closing balance", "", "", report.balanceRec.statementClosing, "", "", "", "", "", "", ""],
+          ["Adjusted statement balance", "", "", report.balanceRec.adjustedBank, "", "", "", "", "", "", ""],
+          ["Books closing balance", "", "", "", "", "", "", report.balanceRec.bookClosing, "", "", ""],
+          ["Adjusted book balance", "", "", "", "", "", "", report.balanceRec.adjustedBook, "", "", ""],
+          ["Balance reconciliation difference", "", "", report.balanceRec.difference, "", "", "", "", "", report.balanceRec.reconciled ? "Reconciled" : "Out of balance", ""],
+        ]
+      : []),
     [],
   ];
 

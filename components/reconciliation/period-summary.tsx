@@ -51,6 +51,7 @@ export function PeriodSummary({
   const [isPending, startTransition] = useTransition();
   const [reason, setReason] = useState("");
   const [reopenOpen, setReopenOpen] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const noActivity = transactionCount === 0 && status !== "finalized";
   const meta = noActivity ? { status: "neutral" as BadgeStatus, label: "No activity" } : STATUS_META[status];
 
@@ -73,7 +74,13 @@ export function PeriodSummary({
           <Button
             size="sm"
             loading={isPending}
-            onClick={() => startTransition(() => finalizeReconciliation(reconciliationId, accountId))}
+            onClick={() => {
+              setActionError(null);
+              startTransition(async () => {
+                const res = await finalizeReconciliation(reconciliationId, accountId);
+                if (res.error) setActionError(res.error);
+              });
+            }}
           >
             <Lock className="h-3.5 w-3.5" />
             Finalize period
@@ -104,8 +111,10 @@ export function PeriodSummary({
                   loading={isPending}
                   onClick={() =>
                     startTransition(async () => {
-                      await reopenReconciliation(reconciliationId, accountId, reason);
-                      setReopenOpen(false);
+                      setActionError(null);
+                      const res = await reopenReconciliation(reconciliationId, accountId, reason);
+                      if (res.error) setActionError(res.error);
+                      else setReopenOpen(false);
                     })
                   }
                 >
@@ -116,6 +125,12 @@ export function PeriodSummary({
           </Modal>
         )}
       </div>
+
+      {actionError && (
+        <p role="alert" className="mt-3 rounded-md border border-status-exception/20 bg-status-exceptionBg px-3 py-2 text-sm text-status-exception">
+          {actionError}
+        </p>
+      )}
 
       <div className="mt-4 grid grid-cols-3 gap-4 border-t border-ink-100 pt-4 text-sm">
         <div>

@@ -10,6 +10,9 @@ import { AddManualTransactionForm } from "@/components/reconciliation/add-manual
 import { PeriodSummary } from "@/components/reconciliation/period-summary";
 import { PeriodNavigator } from "@/components/reconciliation/period-navigator";
 import { testToolsEnabled } from "@/lib/test-tools";
+import { computeBalanceRec, kindForAccountType } from "@/lib/balance-rec";
+import { loadBalanceRecItems, loadSuggestedClosing } from "@/lib/balance-rec-loader";
+import { BalanceReconciliation } from "@/components/reconciliation/balance-reconciliation";
 
 export default async function MatchingWorkspacePage({
   params,
@@ -126,6 +129,31 @@ export default async function MatchingWorkspacePage({
     .lte("transaction_date", periodSummary?.period_end ?? "2999-12-31")
     .order("transaction_date", { ascending: false });
 
+  // The balance reconciliation: the statement's closing balance against the books', each adjusted for
+  // items still in flight at the end of the month.
+  let balanceRec: ReturnType<typeof computeBalanceRec> | null = null;
+  let closingSuggestion: { balance: number; asOf: string } | null = null;
+  let balanceKind: "cash" | "card" = "cash";
+  if (periodSummary) {
+    const { data: acct } = await supabase.from("accounts").select("account_type").eq("id", accountId).maybeSingle();
+    balanceKind = kindForAccountType(acct?.account_type);
+    const { data: saved } = await supabase
+      .from("reconciliations")
+      .select("statement_closing_balance, book_closing_balance")
+      .eq("id", periodSummary.id)
+      .maybeSingle();
+    if (saved && saved.statement_closing_balance !== null && saved.book_closing_balance !== null) {
+      balanceRec = computeBalanceRec({
+        kind: balanceKind,
+        statementClosing: Number(saved.statement_closing_balance),
+        bookClosing: Number(saved.book_closing_balance),
+        items: await loadBalanceRecItems(supabase, accountId, periodSummary.period_start, periodSummary.period_end),
+      });
+    } else if (membership ? can(membership.role, "reconciliation.match") : false) {
+      closingSuggestion = await loadSuggestedClosing(supabase, accountId, periodSummary.period_start, periodSummary.period_end, balanceKind);
+    }
+  }
+
   // Raw unmatched transactions the matching engine found no plausible
   // suggestion for — these never appeared in the workspace before,
   // even though the Reconciliation list page's "unmatched" count
@@ -236,6 +264,19 @@ export default async function MatchingWorkspacePage({
           finalizedAt={periodSummary.finalized_at}
           canFinalize={canFinalize}
           transactionCount={Math.max(0, (activity[periodSummary.period_start.slice(0, 7)] ?? 0) - (excludedTxns?.length ?? 0))}
+        />
+      )}
+
+      {periodSummary && (
+        <BalanceReconciliation
+          accountId={accountId}
+          month={periodSummary.period_start.slice(0, 7)}
+          currency={accountCurrency}
+          kind={balanceKind}
+          rec={balanceRec}
+          suggestion={closingSuggestion}
+          canEdit={canMatch}
+          finalized={periodSummary.status === "finalized"}
         />
       )}
 
