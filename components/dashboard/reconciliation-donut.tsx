@@ -16,13 +16,13 @@ export function ReconciliationDonut({
   const segments = [
     { value: matched, color: "#26b36f" },
     { value: exceptions, color: "#f59e0b" },
-    { value: unmatched, color: "#a3c1fa" },
+    { value: unmatched, color: "#9392f7" },
   ];
 
   let offset = 0;
   return (
     <svg viewBox="0 0 140 140" role="img" aria-label={`${pct}% matched`} className="h-40 w-40">
-      <circle cx="70" cy="70" r={r} fill="none" stroke="#e8eef6" strokeWidth="14" />
+      <circle cx="70" cy="70" r={r} fill="none" stroke="#ececf6" strokeWidth="14" />
       {total > 0 &&
         segments.map((s, i) => {
           if (s.value === 0) return null;
@@ -44,10 +44,10 @@ export function ReconciliationDonut({
           offset += len;
           return el;
         })}
-      <text x="70" y="68" textAnchor="middle" fontSize="24" fontWeight="600" fill="#0f1b4c">
+      <text x="70" y="68" textAnchor="middle" fontSize="24" fontWeight="600" fill="#000000">
         {pct}%
       </text>
-      <text x="70" y="86" textAnchor="middle" fontSize="10.5" fill="#66759a">
+      <text x="70" y="86" textAnchor="middle" fontSize="10.5" fill="#62627f">
         Matched
       </text>
     </svg>

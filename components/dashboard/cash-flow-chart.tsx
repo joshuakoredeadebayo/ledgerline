@@ -54,8 +54,8 @@ export function CashFlowChart({
     <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`Daily bank cash flow in ${currency}`} className="h-auto w-full">
       {ticks.map((t) => (
         <g key={t}>
-          <line x1={pad.l} x2={W - pad.r} y1={y(t)} y2={y(t)} stroke="#e8eef6" />
-          <text x={pad.l - 8} y={y(t) + 4} textAnchor="end" fontSize="12" fill="#66759a">
+          <line x1={pad.l} x2={W - pad.r} y1={y(t)} y2={y(t)} stroke="#ececf6" />
+          <text x={pad.l - 8} y={y(t) + 4} textAnchor="end" fontSize="12" fill="#62627f">
             {compact(t)}
           </text>
         </g>
@@ -63,7 +63,7 @@ export function CashFlowChart({
       {daily.map((d, i) => (
         <g key={i}>
           {d.out > 0 && (
-            <rect x={x(i) - barW - 0.5} y={y(d.out)} width={barW} height={pad.t + innerH - y(d.out)} rx="2" fill="#3b73fe">
+            <rect x={x(i) - barW - 0.5} y={y(d.out)} width={barW} height={pad.t + innerH - y(d.out)} rx="2" fill="#100ded">
               <title>{`Day ${i + 1}: out ${formatCurrency(d.out, currency)}`}</title>
             </rect>
           )}
@@ -75,7 +75,7 @@ export function CashFlowChart({
         </g>
       ))}
       {labelDays.map((d) => (
-        <text key={d} x={x(d - 1)} y={H - 8} textAnchor="middle" fontSize="12" fill="#66759a">
+        <text key={d} x={x(d - 1)} y={H - 8} textAnchor="middle" fontSize="12" fill="#62627f">
           {d}
         </text>
       ))}

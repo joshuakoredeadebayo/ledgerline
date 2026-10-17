@@ -2,7 +2,7 @@ import type { Config } from "tailwindcss";
 import forms from "@tailwindcss/forms";
 
 // Ledgerline design tokens.
-// Palette: restrained neutral base + one accent + a fixed semantic status set.
+// Palette: the four brand colors (see below) + a fixed semantic status set (green, amber, red keep their meaning).
 // Numbers must always render with tabular figures — see globals.css.
 const config: Config = {
   darkMode: "class",
@@ -10,29 +10,32 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Neutral base — a deep navy ink on a cool, very light blue paper.
-        // Matches the approved dashboard mockup (navy text, soft blue-grey surfaces).
+        // Brand palette — four colors:
+        //   Electric Blue #100DED  (primary: buttons, links, charts, focus)
+        //   Deep Blue     #02007C  (pressed states, active navigation, strong emphasis)
+        //   Black         #000000  (text and figures)
+        //   White         #FFFFFF  (surfaces)
+        // Everything else below is a tint or shade of those four, so greys carry a faint blue cast.
         ink: {
-          50: "#f5f8fd",
-          100: "#e8eef6",
-          200: "#d9e1ee",
-          300: "#b9c4d9",
-          400: "#8e9bb8",
-          500: "#66759a",
-          600: "#4a5a82",
-          700: "#323f68",
-          800: "#1d2a57",
-          900: "#0f1b4c",
-          950: "#070f33",
+          50: "#f7f7fd",
+          100: "#ececf6",
+          200: "#dcdcec",
+          300: "#b9b9d3",
+          400: "#8b8bad",
+          500: "#62627f",
+          600: "#46465f",
+          700: "#2f2f45",
+          800: "#17172a",
+          900: "#000000",
+          950: "#000000",
         },
-        // Accent — royal blue from the mockup (logo, bars, progress, links, primary buttons).
         accent: {
-          50: "#eef2fd",
-          100: "#dbe5fd",
-          300: "#91b0fb",
-          500: "#2f62f2",
-          600: "#2551d6",
-          700: "#1d41ab",
+          50: "#f0f0fe",
+          100: "#dbdbfc",
+          300: "#9392f7",
+          500: "#100ded",
+          600: "#0d0abe",
+          700: "#02007c",
         },
         // Semantic status — used consistently across the whole product, never repurposed
         status: {
@@ -42,8 +45,8 @@ const config: Config = {
           pendingBg: "#fdf3dc",
           exception: "#d92d3a",    // red — exception / blocked / variance
           exceptionBg: "#ffe9ea",
-          info: "#2f62f2",         // blue — informational / in sync
-          infoBg: "#e8eefe",
+          info: "#100ded",         // brand blue — informational / in sync
+          infoBg: "#ececfd",
         },
       },
       fontFamily: {

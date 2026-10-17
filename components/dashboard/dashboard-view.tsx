@@ -148,7 +148,7 @@ export function DashboardView({ vm }: { vm: DashboardViewModel }) {
               <p className="text-xs text-ink-500">Daily bank activity · {vm.monthLabel} · {vm.currency}</p>
             </div>
             <div className="flex items-center gap-4 text-xs text-ink-600">
-              <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-[#3b73fe]" />Money out</span>
+              <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-accent-500" />Money out</span>
               <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-[#26b36f]" />Money in</span>
             </div>
           </div>
@@ -205,7 +205,7 @@ export function DashboardView({ vm }: { vm: DashboardViewModel }) {
               {[
                 { label: "Matched", value: vm.matchedCount, dot: "bg-[#26b36f]" },
                 { label: "Exceptions", value: vm.exceptionCount, dot: "bg-[#f59e0b]" },
-                { label: "Unmatched", value: vm.plainUnmatched, dot: "bg-[#a3c1fa]" },
+                { label: "Unmatched", value: vm.plainUnmatched, dot: "bg-accent-300" },
               ].map((row) => (
                 <div key={row.label} className="flex items-center justify-between border-b border-ink-100 pb-2.5">
                   <dt className="flex items-center gap-2 text-ink-600">

@@ -19,25 +19,25 @@ export function invitationEmail(input: {
 
   const html = `<!doctype html>
 <html>
-  <body style="margin:0;padding:0;background:#f5f8fd;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0f1b4c;">
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f5f8fd;padding:32px 16px;">
+  <body style="margin:0;padding:0;background:#f7f7fd;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#000000;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f7f7fd;padding:32px 16px;">
       <tr>
         <td align="center">
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:480px;background:#ffffff;border:1px solid #e8eef6;border-radius:12px;padding:32px;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:480px;background:#ffffff;border:1px solid #ececf6;border-radius:12px;padding:32px;">
             <tr>
               <td>
-                <p style="margin:0 0 20px;font-size:15px;font-weight:600;color:#2f62f2;">Ledgerline</p>
-                <h1 style="margin:0 0 12px;font-size:20px;line-height:28px;font-weight:600;color:#0f1b4c;">You&rsquo;re invited to join ${org}</h1>
-                <p style="margin:0 0 20px;font-size:14px;line-height:22px;color:#4a5a82;">
-                  ${inviter} has invited you to ${org} on Ledgerline as <strong style="color:#0f1b4c;">${role}</strong>.
+                <p style="margin:0 0 20px;font-size:15px;font-weight:600;color:#100ded;">Ledgerline</p>
+                <h1 style="margin:0 0 12px;font-size:20px;line-height:28px;font-weight:600;color:#000000;">You&rsquo;re invited to join ${org}</h1>
+                <p style="margin:0 0 20px;font-size:14px;line-height:22px;color:#46465f;">
+                  ${inviter} has invited you to ${org} on Ledgerline as <strong style="color:#000000;">${role}</strong>.
                   Choose a password to create your account and get started.
                 </p>
                 <p style="margin:0 0 24px;">
-                  <a href="${link}" style="display:inline-block;background:#2f62f2;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 22px;border-radius:8px;">Accept invitation</a>
+                  <a href="${link}" style="display:inline-block;background:#100ded;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 22px;border-radius:8px;">Accept invitation</a>
                 </p>
-                <p style="margin:0 0 6px;font-size:12px;line-height:18px;color:#66759a;">If the button doesn&rsquo;t work, paste this link into your browser:</p>
-                <p style="margin:0 0 20px;font-size:12px;line-height:18px;word-break:break-all;"><a href="${link}" style="color:#2f62f2;">${link}</a></p>
-                <p style="margin:0;font-size:12px;line-height:18px;color:#66759a;">
+                <p style="margin:0 0 6px;font-size:12px;line-height:18px;color:#62627f;">If the button doesn&rsquo;t work, paste this link into your browser:</p>
+                <p style="margin:0 0 20px;font-size:12px;line-height:18px;word-break:break-all;"><a href="${link}" style="color:#100ded;">${link}</a></p>
+                <p style="margin:0;font-size:12px;line-height:18px;color:#62627f;">
                   This invitation works once and expires on ${expires}. If you weren&rsquo;t expecting it, you can ignore this email.
                 </p>
               </td>
