@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AlertTriangle, ChevronRight, ClipboardList, FileCheck2 } from "lucide-react";
+import { AlertTriangle, ChevronRight, ClipboardList, FileCheck2, Percent } from "lucide-react";
 import { getCurrentMembership } from "@/lib/actions/membership";
 import { can } from "@/lib/permissions";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -16,6 +16,12 @@ const REPORTS = [
     title: "Period summary",
     description: "Every reconciled account for a month on one page: status, difference, open items and who finalized it. A quick close review.",
     icon: ClipboardList,
+  },
+  {
+    href: "/reports/vat",
+    title: "VAT summary",
+    description: "Output VAT, input VAT and the net amount due for a month, with the filing date, from VAT-tagged journal entries.",
+    icon: Percent,
   },
   {
     href: "/reports/exceptions",
@@ -44,7 +50,7 @@ export default async function ReportsPage() {
           Every report can be printed or saved as a PDF, and downloaded as a spreadsheet (CSV). For a record of who did what, see the audit log under Settings.
         </p>
       </div>
-      <ul className="grid grid-cols-1 gap-4 md:grid-cols-3">
+      <ul className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
         {REPORTS.map((r) => (
           <li key={r.href}>
             <Link href={r.href} className="flex h-full flex-col rounded-xl border border-ink-100 bg-white p-5 shadow-subtle transition-shadow hover:shadow-panel">

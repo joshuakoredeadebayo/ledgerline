@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { CreateAccountForm } from "@/components/entities/create-account-form";
 import { EditEntityDialog } from "@/components/entities/edit-entity-dialog";
 import { ArchiveEntityButton } from "@/components/entities/archive-entity-button";
+import { VatSettingsDialog } from "@/components/entities/vat-settings-dialog";
 import { AccountActions, type AccountForActions } from "@/components/entities/account-actions";
 import { ConnectBankButton } from "@/components/plaid/connect-bank-button";
 import { DisconnectBankButton } from "@/components/plaid/disconnect-bank-button";
@@ -51,7 +52,7 @@ export default async function EntityDetailPage({
 
   const { data: entity } = await supabase
     .from("entities")
-    .select("id, name, currency, fiscal_year_end, archived_at")
+    .select("id, name, currency, fiscal_year_end, archived_at, vat_registered, vat_number, vat_rate, vat_output_account_id, vat_input_account_id, vat_input_recoverable_percent")
     .eq("id", entityId)
     .single();
   if (!entity) notFound();
@@ -144,10 +145,26 @@ export default async function EntityDetailPage({
             <p className="mt-1 text-sm text-ink-500">
               {entity.currency}
               {fiscalYearEnd ? ` · Fiscal year ends ${fiscalYearEnd}` : ""}
+              {entity.vat_registered ? ` · VAT ${Number(entity.vat_rate)}%${entity.vat_number ? ` (${entity.vat_number})` : ""}` : ""}
             </p>
           </div>
           {canEntityAdmin && (
             <div className="flex flex-wrap items-center gap-2">
+              {!isArchived && (
+                <VatSettingsDialog
+                  entity={{
+                    id: entity.id,
+                    name: entity.name,
+                    registered: !!entity.vat_registered,
+                    vatNumber: entity.vat_number ?? "",
+                    ratePercent: Number(entity.vat_rate ?? 7.5),
+                    outputAccountId: entity.vat_output_account_id ?? null,
+                    inputAccountId: entity.vat_input_account_id ?? null,
+                    recoverablePercent: Number(entity.vat_input_recoverable_percent ?? 100),
+                  }}
+                  accounts={accounts.map((a) => ({ id: a.id, name: a.name, code: a.code, accountType: a.account_type }))}
+                />
+              )}
               {!isArchived && (
                 <EditEntityDialog
                   entityId={entity.id}

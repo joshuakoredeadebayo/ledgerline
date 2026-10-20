@@ -6,6 +6,7 @@ import { getCurrentMembership } from "@/lib/actions/membership";
 import { assertPermission } from "@/lib/permissions";
 import { checkJournalLines, ledgerAmountForLine, reverseLines, type JournalLineInput } from "@/lib/journal-math";
 import { getOrCreateReconciliationPeriod, recomputeReconciliationStatus } from "@/lib/reconciliation-status";
+import { checkVatConsistency } from "@/lib/vat";
 
 export interface JournalEntryInput {
   /** Present when editing an existing draft. */
@@ -87,6 +88,23 @@ export async function saveJournalEntry(input: JournalEntryInput): Promise<{ erro
     if (a.archived_at) return { error: "A line uses an archived account. Pick an active one." };
   }
 
+  // VAT tags: shape is always checked; that the VAT lines agree with the tags is checked when posting.
+  const { data: vatEntity } = await supabase
+    .from("entities")
+    .select("vat_registered, vat_output_account_id, vat_input_account_id")
+    .eq("id", input.entityId)
+    .maybeSingle();
+  const hasTags = check.lines.some((l) => l.vat);
+  if (hasTags && !vatEntity?.vat_registered) return { error: "This entity isn't registered for VAT, so lines can't carry VAT tags. Turn VAT on in the entity's VAT settings." };
+  if (hasTags && input.postNow) {
+    const problems = checkVatConsistency(
+      check.lines.map((l) => ({ accountId: l.accountId, debit: l.debit, credit: l.credit, vat: l.vat })),
+      vatEntity?.vat_output_account_id ?? null,
+      vatEntity?.vat_input_account_id ?? null
+    );
+    if (problems.length > 0) return { error: problems[0] };
+  }
+
   let entryId = input.id;
   if (entryId) {
     const { data: existing } = await supabase.from("journal_entries").select("id, status, entity_id").eq("id", entryId).maybeSingle();
@@ -118,7 +136,18 @@ export async function saveJournalEntry(input: JournalEntryInput): Promise<{ erro
   }
 
   const { error: linesError } = await supabase.from("journal_entry_lines").insert(
-    check.lines.map((l) => ({ journal_entry_id: entryId, account_id: l.accountId, debit: l.debit, credit: l.credit, memo: l.memo }))
+    check.lines.map((l) => ({
+      journal_entry_id: entryId,
+      account_id: l.accountId,
+      debit: l.debit,
+      credit: l.credit,
+      memo: l.memo,
+      vat_code: l.vat?.code ?? null,
+      vat_direction: l.vat?.direction ?? null,
+      vat_rate: l.vat ? l.vat.rate : null,
+      vat_amount: l.vat ? l.vat.amount : 0,
+      vat_category: l.vat?.category ?? null,
+    }))
   );
   if (linesError) return { error: linesError.message };
 
@@ -197,7 +226,7 @@ export async function postJournalEntry(entryId: string): Promise<{ error?: strin
   const supabase = (await createClient()) as any;
   const { data: entry } = await supabase
     .from("journal_entries")
-    .select("id, entity_id, entry_date, description, status, journal_entry_lines(id, account_id, debit, credit, memo, accounts(id, name, is_reconcilable, archived_at))")
+    .select("id, entity_id, entry_date, description, status, journal_entry_lines(id, account_id, debit, credit, memo, vat_code, vat_direction, vat_rate, vat_amount, vat_category, accounts(id, name, is_reconcilable, archived_at))")
     .eq("id", entryId)
     .maybeSingle();
   if (!entry) return { error: "Journal entry not found." };
@@ -207,6 +236,27 @@ export async function postJournalEntry(entryId: string): Promise<{ error?: strin
   const check = checkJournalLines(lines.map((l) => ({ accountId: l.account_id, debit: l.debit, credit: l.credit, memo: l.memo })));
   if (!check.ok) return { error: check.problems[0] };
   if (lines.some((l) => l.accounts?.archived_at)) return { error: "A line uses an archived account. Edit the draft to pick an active one." };
+
+  // VAT-tagged lines must agree with what is posted to the entity's VAT accounts.
+  if (lines.some((l) => l.vat_code)) {
+    const { data: vatEntity } = await supabase
+      .from("entities")
+      .select("vat_registered, vat_output_account_id, vat_input_account_id")
+      .eq("id", entry.entity_id)
+      .maybeSingle();
+    if (!vatEntity?.vat_registered) return { error: "This entity isn't registered for VAT, so VAT-tagged lines can't be posted." };
+    const problems = checkVatConsistency(
+      lines.map((l) => ({
+        accountId: l.account_id,
+        debit: l.debit,
+        credit: l.credit,
+        vat: l.vat_code ? { code: l.vat_code, direction: l.vat_direction, rate: Number(l.vat_rate ?? 0), amount: Number(l.vat_amount ?? 0) } : null,
+      })),
+      vatEntity.vat_output_account_id ?? null,
+      vatEntity.vat_input_account_id ?? null
+    );
+    if (problems.length > 0) return { error: problems[0] };
+  }
 
   const feedLines = lines.filter((l) => l.accounts?.is_reconcilable);
 

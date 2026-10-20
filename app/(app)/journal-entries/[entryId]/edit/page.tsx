@@ -15,7 +15,7 @@ export default async function EditJournalEntryPage({ params }: { params: Promise
   const supabase = (await createClient()) as any;
   const { data: entry } = await supabase
     .from("journal_entries")
-    .select("id, entity_id, entry_date, description, status, journal_entry_lines(account_id, debit, credit, memo)")
+    .select("id, entity_id, entry_date, description, status, journal_entry_lines(account_id, debit, credit, memo, vat_code, vat_direction, vat_rate, vat_amount, vat_category)")
     .eq("id", entryId)
     .maybeSingle();
   if (!entry) notFound();
@@ -46,6 +46,9 @@ export default async function EditJournalEntryPage({ params }: { params: Promise
             debit: Number(l.debit) > 0 ? String(l.debit) : "",
             credit: Number(l.credit) > 0 ? String(l.credit) : "",
             memo: l.memo ?? "",
+            vat: l.vat_code
+              ? { code: l.vat_code, direction: l.vat_direction, rate: Number(l.vat_rate ?? 0), amount: Number(l.vat_amount ?? 0), category: l.vat_category ?? "" }
+              : null,
           })),
         }}
       />

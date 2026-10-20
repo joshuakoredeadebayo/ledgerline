@@ -27,7 +27,7 @@ export default async function JournalEntryDetailPage({ params }: { params: Promi
   const { data: entry } = await supabase
     .from("journal_entries")
     .select(
-      "id, entity_id, entry_date, description, status, reversed_entry_id, created_by, created_at, posted_at, entities(name, currency), journal_entry_lines(id, debit, credit, memo, accounts(id, name, code, is_reconcilable))"
+      "id, entity_id, entry_date, description, status, reversed_entry_id, created_by, created_at, posted_at, entities(name, currency), journal_entry_lines(id, debit, credit, memo, vat_code, vat_direction, vat_rate, vat_amount, vat_category, accounts(id, name, code, is_reconcilable))"
     )
     .eq("id", entryId)
     .maybeSingle();
@@ -125,6 +125,12 @@ export default async function JournalEntryDetailPage({ params }: { params: Promi
                   {l.accounts?.code ? `${l.accounts.code} · ` : ""}
                   {l.accounts?.name ?? "Account"}
                   {l.accounts?.is_reconcilable && <span className="ml-2 rounded-full bg-accent-50 px-2 py-0.5 text-xs text-accent-700">bank/card</span>}
+                  {l.vat_code && (
+                    <span className="mt-0.5 block text-xs text-ink-500">
+                      VAT: {l.vat_code === "STD" ? `standard ${Number(l.vat_rate)}%` : String(l.vat_code).toLowerCase()} · {l.vat_direction}
+                      {Number(l.vat_amount) > 0 ? ` · ${formatCurrency(Number(l.vat_amount), currency)}` : ""}
+                    </span>
+                  )}
                 </td>
                 <td className="px-3 py-3 text-right tabular-nums text-ink-900">{Number(l.debit) > 0 ? formatCurrency(Number(l.debit), currency) : ""}</td>
                 <td className="px-3 py-3 text-right tabular-nums text-ink-900">{Number(l.credit) > 0 ? formatCurrency(Number(l.credit), currency) : ""}</td>

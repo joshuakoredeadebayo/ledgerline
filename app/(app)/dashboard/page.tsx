@@ -2,6 +2,7 @@ import { getCurrentMembership } from "@/lib/actions/membership";
 import { createClient } from "@/lib/supabase/server";
 import { getAttentionCounts, monthLabel } from "@/lib/attention-counts";
 import { formatCurrency } from "@/lib/utils";
+import { nextVatDue } from "@/lib/vat";
 import { DashboardView, type DashboardViewModel } from "@/components/dashboard/dashboard-view";
 
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -167,6 +168,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const pendingTotal = counts.pendingMatches + (confirmedMatches ?? 0);
   const resolvedExceptions = Math.max(0, (allExceptions ?? 0) - counts.openExceptions);
 
+  // VAT returns fall due on the 21st of the following month, for each entity registered for VAT.
+  const { data: vatEntities } = await supabase.from("entities").select("name").eq("vat_registered", true).is("archived_at", null).limit(3);
+  const vatDue = nextVatDue(new Date());
+
   // Deadlines: open close periods' end dates plus any dated checklist tasks.
   type Deadline = { date: string; title: string; subtitle: string };
   const deadlines: Deadline[] = [
@@ -174,6 +179,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       date: p.period_end,
       title: "Month-end close",
       subtitle: `Complete the ${monthLabel(p.period_start)} close checklist`,
+    })),
+    ...((vatEntities ?? []) as { name: string }[]).map((e) => ({
+      date: vatDue.dueDate,
+      title: "VAT return",
+      subtitle: `${e.name} · ${monthLabel(`${vatDue.period}-01`)}`,
     })),
     ...(dueItems ?? []).map((i: any) => ({
       date: i.due_date as string,

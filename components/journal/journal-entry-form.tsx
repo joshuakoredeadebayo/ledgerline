@@ -5,7 +5,9 @@ import { useRouter } from "next/navigation";
 import { useMemo, useRef, useState, useTransition } from "react";
 import { Plus, X } from "lucide-react";
 import { saveJournalEntry } from "@/lib/actions/journal-entries";
-import { checkJournalLines } from "@/lib/journal-math";
+import { checkJournalLines, type VatTagInput } from "@/lib/journal-math";
+import { checkVatConsistency } from "@/lib/vat";
+import { VatHelper } from "@/components/journal/vat-helper";
 import { formatCurrency } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
@@ -13,6 +15,10 @@ export interface FormEntity {
   id: string;
   name: string;
   currency: string;
+  vatRegistered: boolean;
+  vatRate: number;
+  vatOutputAccountId: string | null;
+  vatInputAccountId: string | null;
 }
 
 export interface FormAccount {
@@ -29,6 +35,8 @@ export interface FormLine {
   debit: string;
   credit: string;
   memo: string;
+  /** Set by the VAT helper; says how much VAT sits on this line. */
+  vat?: VatTagInput | null;
 }
 
 export interface JournalFormInitial {
@@ -82,6 +90,13 @@ export function JournalEntryForm({
   const diff = (check.totalDebitCents - check.totalCreditCents) / 100;
   const balanced = check.totalDebitCents === check.totalCreditCents && check.totalDebitCents > 0;
   const currency = entity?.currency ?? "USD";
+  const vatProblems = entity
+    ? checkVatConsistency(
+        lines.map((l) => ({ accountId: l.accountId, debit: l.debit, credit: l.credit, vat: l.vat ?? null })),
+        entity.vatOutputAccountId,
+        entity.vatInputAccountId
+      )
+    : [];
   const feedAccounts = lines
     .map((l) => entityAccounts.find((a) => a.id === l.accountId))
     .filter((a): a is FormAccount => !!a && a.reconcilable);
@@ -100,8 +115,14 @@ export function JournalEntryForm({
 
   const changeEntity = (id: string) => {
     setEntityId(id);
-    // Accounts belong to one entity, so any already chosen would no longer be valid.
-    setLines((prev) => prev.map((l) => ({ ...l, accountId: "" })));
+    // Accounts belong to one entity, so any already chosen would no longer be valid. VAT tags go too.
+    setLines((prev) => prev.map((l) => ({ ...l, accountId: "", vat: null })));
+  };
+
+  const applyVatLines = (built: FormLine[], categoryLabel: string) => {
+    keys.current = built.map(() => nextKey.current++);
+    setLines(built);
+    if (!description.trim()) setDescription(categoryLabel);
   };
 
   const submit = (postNow: boolean) => {
@@ -112,7 +133,7 @@ export function JournalEntryForm({
         entityId,
         entryDate,
         description,
-        lines: lines.map((l) => ({ accountId: l.accountId, debit: l.debit, credit: l.credit, memo: l.memo })),
+        lines: lines.map((l) => ({ accountId: l.accountId, debit: l.debit, credit: l.credit, memo: l.memo, vat: l.vat ?? null })),
         postNow,
       });
       if (res.error) {
@@ -158,6 +179,20 @@ export function JournalEntryForm({
         </label>
       </section>
 
+      {entity && (
+        <VatHelper
+          key={entity.id}
+          entity={entity}
+          accounts={entityAccounts}
+          defaultAmount={(() => {
+            const first = lines.find((l) => Number(l.debit) > 0 || Number(l.credit) > 0);
+            return first ? Number(first.debit) || Number(first.credit) : null;
+          })()}
+          defaultSettlementId={lines.find((l) => entityAccounts.find((a) => a.id === l.accountId && a.reconcilable))?.accountId ?? null}
+          onApply={applyVatLines}
+        />
+      )}
+
       <section className="overflow-x-auto rounded-xl border border-ink-100 bg-white shadow-subtle">
         <table className="w-full min-w-[40rem] text-sm">
           <thead>
@@ -192,6 +227,12 @@ export function JournalEntryForm({
                       </optgroup>
                     ))}
                   </select>
+                  {line.vat && (
+                    <p className="mt-1 text-xs text-ink-500">
+                      VAT: {line.vat.code === "STD" ? `standard ${line.vat.rate}%` : line.vat.code.toLowerCase()}
+                      {line.vat.amount > 0 ? ` · ${formatCurrency(line.vat.amount, currency)}` : ""}
+                    </p>
+                  )}
                 </td>
                 <td className="px-2 py-2">
                   <input
@@ -267,6 +308,12 @@ export function JournalEntryForm({
         </p>
       )}
 
+      {vatProblems.length > 0 && (
+        <p className="rounded-lg border border-status-pending/30 bg-status-pendingBg px-4 py-3 text-sm text-ink-800">
+          <span className="font-medium">VAT check:</span> {vatProblems[0]}
+        </p>
+      )}
+
       {error && (
         <p role="alert" className="rounded-lg border border-status-exception/20 bg-status-exceptionBg px-4 py-3 text-sm text-status-exception">
           {error}
@@ -278,7 +325,7 @@ export function JournalEntryForm({
           Save draft
         </Button>
         {canPost && (
-          <Button type="button" loading={pending} disabled={!balanced} onClick={() => submit(true)} title={balanced ? "" : "Debits and credits must be equal to post"}>
+          <Button type="button" loading={pending} disabled={!balanced || vatProblems.length > 0} onClick={() => submit(true)} title={balanced ? "" : "Debits and credits must be equal to post"}>
             Save and post
           </Button>
         )}

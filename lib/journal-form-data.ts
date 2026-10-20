@@ -4,8 +4,16 @@ import type { FormAccount, FormEntity } from "@/components/journal/journal-entry
 /** The active entities and their active accounts, shaped for the journal entry form. */
 export async function loadJournalFormData(): Promise<{ entities: FormEntity[]; accounts: FormAccount[] }> {
   const supabase = (await createClient()) as any;
-  const { data: entityRows } = await supabase.from("entities").select("id, name, currency").is("archived_at", null).order("name");
-  const entities: FormEntity[] = (entityRows ?? []) as FormEntity[];
+  const { data: entityRows } = await supabase.from("entities").select("id, name, currency, vat_registered, vat_rate, vat_output_account_id, vat_input_account_id").is("archived_at", null).order("name");
+  const entities: FormEntity[] = ((entityRows ?? []) as any[]).map((e) => ({
+    id: e.id,
+    name: e.name,
+    currency: e.currency,
+    vatRegistered: !!e.vat_registered,
+    vatRate: Number(e.vat_rate ?? 7.5),
+    vatOutputAccountId: e.vat_output_account_id ?? null,
+    vatInputAccountId: e.vat_input_account_id ?? null,
+  }));
 
   const { data: accountRows } = entities.length
     ? await supabase

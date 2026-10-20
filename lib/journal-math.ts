@@ -4,11 +4,24 @@
  * drift (0.1 + 0.2 must equal 0.3 here).
  */
 
+import type { VatCode, VatDirection } from "@/lib/vat";
+
+/** The VAT classification of a line (set by the VAT helper): see lib/vat.ts. */
+export interface VatTagInput {
+  code: VatCode;
+  direction: VatDirection;
+  rate: number;
+  /** The VAT on this line's amount; it sits on its own line in the VAT account. */
+  amount: number;
+  category: string;
+}
+
 export interface JournalLineInput {
   accountId: string;
   debit: number | string;
   credit: number | string;
   memo?: string | null;
+  vat?: VatTagInput | null;
 }
 
 export interface CleanJournalLine {
@@ -17,6 +30,7 @@ export interface CleanJournalLine {
   debit: number;
   credit: number;
   memo: string | null;
+  vat: VatTagInput | null;
 }
 
 export const toCents = (value: number | string): number => Math.round(Number(value || 0) * 100);
@@ -61,6 +75,7 @@ export function checkJournalLines(rawLines: JournalLineInput[], requireBalanced 
       debit: fromCents(Math.max(0, debit)),
       credit: fromCents(Math.max(0, credit)),
       memo: (raw.memo ?? "").trim() || null,
+      vat: raw.vat ?? null,
     });
   });
 
