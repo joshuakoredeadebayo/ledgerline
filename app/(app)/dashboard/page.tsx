@@ -109,6 +109,18 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     .select("status")
     .eq("period_start", periodStart);
 
+  // Things waiting on this person: reviews to give, and exceptions or close tasks assigned to them.
+  const myId = membership?.userId ?? "";
+  const { count: reviewsWaiting } = myId
+    ? await supabase.from("reconciliations").select("id", { count: "exact", head: true }).eq("reviewer_id", myId).eq("review_status", "pending")
+    : { count: 0 };
+  const { count: myExceptions } = myId
+    ? await supabase.from("exceptions").select("id", { count: "exact", head: true }).eq("assigned_to", myId).eq("status", "open")
+    : { count: 0 };
+  const { count: myTasks } = myId
+    ? await supabase.from("close_checklist_items").select("id", { count: "exact", head: true }).eq("assignee_id", myId).neq("status", "complete")
+    : { count: 0 };
+
   // Close checklist for the newest open close period.
   const latest = counts.latestOpenPeriod;
   const { data: checklistRows } = latest
@@ -263,6 +275,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     latestBankMonth: latestBankMonthValue ? { value: latestBankMonthValue, label: monthLabel(`${latestBankMonthValue}-01`) } : null,
     hasAnyData,
     hasAccount,
+    reviewsWaiting: reviewsWaiting ?? 0,
+    assignedToMe: (myExceptions ?? 0) + (myTasks ?? 0),
   };
 
   return <DashboardView vm={vm} />;

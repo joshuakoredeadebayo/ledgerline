@@ -226,11 +226,16 @@ export async function postJournalEntry(entryId: string): Promise<{ error?: strin
   const supabase = (await createClient()) as any;
   const { data: entry } = await supabase
     .from("journal_entries")
-    .select("id, entity_id, entry_date, description, status, journal_entry_lines(id, account_id, debit, credit, memo, vat_code, vat_direction, vat_rate, vat_amount, vat_category, accounts(id, name, is_reconcilable, archived_at))")
+    .select("id, entity_id, entry_date, description, status, created_by, journal_entry_lines(id, account_id, debit, credit, memo, vat_code, vat_direction, vat_rate, vat_amount, vat_category, accounts(id, name, is_reconcilable, archived_at))")
     .eq("id", entryId)
     .maybeSingle();
   if (!entry) return { error: "Journal entry not found." };
   if (entry.status !== "draft") return { error: "This entry has already been posted." };
+
+  const { data: signoffOrg } = await supabase.from("organizations").select("require_signoff").eq("id", membership.organizationId).maybeSingle();
+  if (signoffOrg?.require_signoff && entry.created_by === membership.userId) {
+    return { error: "Sign-off is required: a different person must review and post this entry. Ask a controller or owner to post it." };
+  }
 
   const lines: any[] = entry.journal_entry_lines ?? [];
   const check = checkJournalLines(lines.map((l) => ({ accountId: l.account_id, debit: l.debit, credit: l.credit, memo: l.memo })));

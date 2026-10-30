@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/utils";
 import { ChecklistItemRow } from "@/components/close/checklist-item-row";
 import { CloseButton } from "@/components/close/close-button";
+import { AssignDialog } from "@/components/collab/assign-dialog";
 
 export default async function ClosePeriodPage({ params }: { params: Promise<{ period: string }> }) {
   const { period: closePeriodId } = await params;
@@ -43,9 +44,15 @@ export default async function ClosePeriodPage({ params }: { params: Promise<{ pe
 
   const { data: items } = await supabase
     .from("close_checklist_items")
-    .select("id, title, description, status, is_auto, assignee_id, completed_at")
+    .select("id, title, description, status, is_auto, assignee_id, due_date, completed_at")
     .eq("close_period_id", closePeriodId)
     .order("sort_order");
+
+  const { data: rosterData } = membership ? await supabase.rpc("list_org_members", { p_org: membership.organizationId }) : { data: [] };
+  const people = ((rosterData ?? []) as { user_id: string; email: string; role: any; joined_at: string | null }[]).filter((m) => m.joined_at);
+  const emailOf = new Map(people.map((m) => [m.user_id, m.email]));
+  const taskMembers = people.filter((m) => can(m.role, "close.manage_checklist")).map((m) => ({ id: m.user_id, email: m.email }));
+  const today = new Date().toISOString().slice(0, 10);
 
   const entityName = (period.entities as unknown as { name: string })?.name ?? "Entity";
   const allComplete = (items ?? []).length > 0 && (items ?? []).every((i: any) => i.status === "complete");
@@ -93,6 +100,34 @@ export default async function ClosePeriodPage({ params }: { params: Promise<{ pe
               {item.description && <p className="mt-0.5 text-sm text-ink-500">{item.description}</p>}
               {item.is_auto && (
                 <p className="mt-1 text-xs text-ink-400">Verified automatically from your data</p>
+              )}
+              {!item.is_auto && (item.assignee_id || (canToggle && period.status !== "closed")) && (
+                <p className="mt-1.5 flex flex-wrap items-center gap-x-2 text-xs text-ink-500">
+                  {item.assignee_id ? (
+                    <span>
+                      Assigned to <span className="font-medium text-ink-700">{(emailOf.get(item.assignee_id) ?? "a former member").split("@")[0]}</span>
+                      {item.due_date ? (
+                        <span className={item.status !== "complete" && item.due_date < today ? "font-medium text-status-exception" : ""}>
+                          {" "}
+                          · due {item.due_date}
+                          {item.status !== "complete" && item.due_date < today ? " (overdue)" : ""}
+                        </span>
+                      ) : null}
+                    </span>
+                  ) : (
+                    <span>Not assigned</span>
+                  )}
+                  {canToggle && period.status !== "closed" && (
+                    <AssignDialog
+                      type="close_task"
+                      id={item.id}
+                      label={item.title}
+                      members={taskMembers}
+                      currentAssigneeId={item.assignee_id ?? null}
+                      currentDueDate={item.due_date ?? null}
+                    />
+                  )}
+                </p>
               )}
             </div>
             {!item.is_auto && period.status !== "closed" && (

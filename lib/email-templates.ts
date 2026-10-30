@@ -61,3 +61,37 @@ export function invitationEmail(input: {
 
   return { subject, html, text };
 }
+
+/** A short notification email: a headline, a line of detail and one button back into the app. */
+export function notificationEmail(input: { title: string; body?: string | null; link: string; organizationName: string }) {
+  const title = escapeHtml(input.title);
+  const body = input.body ? escapeHtml(input.body) : "";
+  const org = escapeHtml(input.organizationName);
+  const link = escapeHtml(input.link);
+
+  const subject = `${input.title} · ${input.organizationName}`;
+  const html = `<!doctype html>
+<html>
+  <body style="margin:0;padding:0;background:#f7f7fd;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#000000;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f7f7fd;padding:32px 16px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:480px;background:#ffffff;border:1px solid #ececf6;border-radius:12px;padding:28px;">
+            <tr>
+              <td>
+                <p style="margin:0 0 16px;font-size:15px;font-weight:600;color:#100ded;">Ledgerline</p>
+                <h1 style="margin:0 0 10px;font-size:18px;line-height:26px;font-weight:600;color:#000000;">${title}</h1>
+                ${body ? `<p style="margin:0 0 20px;font-size:14px;line-height:22px;color:#46465f;">${body}</p>` : ""}
+                <p style="margin:0 0 20px;"><a href="${link}" style="display:inline-block;background:#100ded;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:11px 20px;border-radius:8px;">Open in Ledgerline</a></p>
+                <p style="margin:0;font-size:12px;line-height:18px;color:#62627f;">You&rsquo;re receiving this because of your role in ${org}. You can turn these emails off under My account.</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+  const text = [input.title, input.body ?? "", "", `Open in Ledgerline: ${input.link}`].filter((l, i) => l !== "" || i === 2).join("\n");
+  return { subject, html, text };
+}

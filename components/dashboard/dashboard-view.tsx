@@ -39,6 +39,8 @@ export interface DashboardViewModel {
   latestBankMonth: { value: string; label: string } | null;
   hasAnyData: boolean;
   hasAccount: boolean;
+  reviewsWaiting: number;
+  assignedToMe: number;
 }
 
 const card = "rounded-xl border border-ink-100 bg-white p-5 shadow-subtle";
@@ -276,6 +278,12 @@ export function DashboardView({ vm }: { vm: DashboardViewModel }) {
               { n: vm.pendingMatches, title: "Matches awaiting review", sub: "Confirm or reject suggestions", href: "/reconciliation/pending-matches", tone: "bg-status-pendingBg text-status-pending" },
               { n: Math.max(0, vm.checklistTotal - vm.checklistDone), title: "Close tasks remaining", sub: vm.closePeriod ? vm.closePeriod.label : "No open close period", href: "/close", tone: "bg-status-infoBg text-status-info" },
               { n: vm.openExceptions, title: "Exceptions to investigate", sub: "Potential discrepancies", href: "/reconciliation/exceptions", tone: "bg-status-exceptionBg text-status-exception" },
+              ...(vm.reviewsWaiting > 0
+                ? [{ n: vm.reviewsWaiting, title: "Waiting for your review", sub: "Reconciliations to approve", href: "/reconciliation", tone: "bg-accent-50 text-accent-700" }]
+                : []),
+              ...(vm.assignedToMe > 0
+                ? [{ n: vm.assignedToMe, title: "Assigned to you", sub: "Exceptions and close tasks", href: "/reconciliation/exceptions?mine=1", tone: "bg-accent-50 text-accent-700" }]
+                : []),
             ].map((item) => (
               <li key={item.title}>
                 <Link href={item.href} className="flex items-center gap-3 rounded-lg px-2 py-2.5 hover:bg-ink-50">

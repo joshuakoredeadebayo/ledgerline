@@ -22,6 +22,8 @@ interface PeriodSummaryProps {
   currency: string;
   finalizedAt: string | null;
   canFinalize: boolean;
+  /** When true the Sign-off panel handles finalizing, so the direct Finalize button is hidden. */
+  signoffRequired?: boolean;
   /** Transactions in the period, not counting excluded ones. An empty month can't be finalized. */
   transactionCount: number;
 }
@@ -46,6 +48,7 @@ export function PeriodSummary({
   currency,
   finalizedAt,
   canFinalize,
+  signoffRequired = false,
   transactionCount,
 }: PeriodSummaryProps) {
   const [isPending, startTransition] = useTransition();
@@ -70,7 +73,7 @@ export function PeriodSummary({
           </div>
         </div>
 
-        {canFinalize && status === "reconciled" && !noActivity && (
+        {canFinalize && !signoffRequired && status === "reconciled" && !noActivity && (
           <Button
             size="sm"
             loading={isPending}

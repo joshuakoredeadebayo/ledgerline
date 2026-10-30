@@ -291,13 +291,22 @@ export async function finalizeReconciliation(reconciliationId: string, accountId
   const supabase = (await createClient()) as any;
   const { data: recon } = await supabase
     .from("reconciliations")
-    .select("id, entity_id, status, period_start, period_end, statement_closing_balance, book_closing_balance")
+    .select("id, entity_id, status, period_start, period_end, statement_closing_balance, book_closing_balance, submitted_by, review_status, reviewed_by")
     .eq("id", reconciliationId)
     .single();
 
   if (!recon) return { error: "Reconciliation period not found." };
   if (recon.status !== "reconciled") {
     return { error: "This period can only be finalized once it's fully reconciled." };
+  }
+
+  // When the organization requires sign-off, only an approved review by someone other than the
+  // preparer can finalize a period (the approval flow calls this once it has recorded the approval).
+  const { data: org } = await supabase.from("organizations").select("require_signoff").eq("id", membership.organizationId).maybeSingle();
+  if (org?.require_signoff) {
+    const approved =
+      recon.review_status === "approved" && recon.reviewed_by === membership.userId && !!recon.submitted_by && recon.submitted_by !== membership.userId;
+    if (!approved) return { error: "Sign-off is required. Submit this period for review, so that someone other than the preparer can approve it." };
   }
 
   // If the statement and book balances were entered, the balance reconciliation has to agree too.
@@ -375,7 +384,17 @@ export async function reopenReconciliation(reconciliationId: string, accountId: 
 
   await supabase
     .from("reconciliations")
-    .update({ status: "reopened", reopened_reason: reason.trim() })
+    .update({
+      status: "reopened",
+      reopened_reason: reason.trim(),
+      review_status: null,
+      review_note: null,
+      submitted_by: null,
+      submitted_at: null,
+      reviewer_id: null,
+      reviewed_by: null,
+      reviewed_at: null,
+    })
     .eq("id", reconciliationId);
 
   await supabase.from("audit_log").insert({

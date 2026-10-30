@@ -7,6 +7,8 @@ import { formatCurrency } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ExceptionActions } from "@/components/reconciliation/exception-actions";
+import { AssignDialog } from "@/components/collab/assign-dialog";
+import { CommentsButton } from "@/components/collab/comments-button";
 
 const PAGE_SIZE = 50;
 
@@ -49,8 +51,9 @@ function adjustHref(t: any): string | undefined {
 const fmtDate = (iso: string) =>
   new Date(`${iso.slice(0, 10)}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 
-export default async function ExceptionsPage({ searchParams }: { searchParams: Promise<{ status?: string; page?: string }> }) {
-  const { status, page } = await searchParams;
+export default async function ExceptionsPage({ searchParams }: { searchParams: Promise<{ status?: string; page?: string; mine?: string }> }) {
+  const { status, page, mine } = await searchParams;
+  const onlyMine = mine === "1";
   const tab: Tab = TABS.find((t) => t.value === status)?.value ?? "open";
   const pageNumber = Math.max(1, Number.parseInt(page ?? "1", 10) || 1);
   const from = (pageNumber - 1) * PAGE_SIZE;
@@ -61,15 +64,17 @@ export default async function ExceptionsPage({ searchParams }: { searchParams: P
   // Cast to `any`: some columns are newer than the generated Supabase types.
   const supabase = (await createClient()) as any;
 
-  const { data, count } = await supabase
+  let query = supabase
     .from("exceptions")
     .select(
-      "id, exception_type, severity, status, created_at, resolved_at, resolved_by, resolution_reason, resolution_note, transactions(id, amount, currency, transaction_date, description, account_id, entity_id, source, raw_payload, accounts(name, entities(name)))",
+      "id, exception_type, severity, status, created_at, resolved_at, resolved_by, resolution_reason, resolution_note, assigned_to, due_date, transactions(id, amount, currency, transaction_date, description, account_id, entity_id, source, raw_payload, accounts(name, entities(name)))",
       { count: "exact" }
     )
     .eq("status", tab)
     .order(tab === "open" ? "created_at" : "resolved_at", { ascending: false, nullsFirst: false })
     .range(from, from + PAGE_SIZE - 1);
+  if (onlyMine && membership) query = query.eq("assigned_to", membership.userId);
+  const { data, count } = await query;
 
   const rows: any[] = data ?? [];
   const total = count ?? 0;
@@ -79,10 +84,15 @@ export default async function ExceptionsPage({ searchParams }: { searchParams: P
     ? await supabase.rpc("list_org_members", { p_org: membership.organizationId })
     : { data: [] };
   const emailById = new Map<string, string>(((rosterData ?? []) as any[]).map((m) => [m.user_id, m.email]));
+  const assignable = ((rosterData ?? []) as any[])
+    .filter((m) => m.joined_at && can(m.role, "reconciliation.match"))
+    .map((m) => ({ id: m.user_id as string, email: m.email as string }));
+  const today = new Date().toISOString().slice(0, 10);
 
-  const linkFor = (nextTab: Tab, nextPage = 1) => {
+  const linkFor = (nextTab: Tab, nextPage = 1, nextMine = onlyMine) => {
     const params = new URLSearchParams();
     if (nextTab !== "open") params.set("status", nextTab);
+    if (nextMine) params.set("mine", "1");
     if (nextPage > 1) params.set("page", String(nextPage));
     const qs = params.toString();
     return `/reconciliation/exceptions${qs ? `?${qs}` : ""}`;
@@ -116,6 +126,16 @@ export default async function ExceptionsPage({ searchParams }: { searchParams: P
             {t.label}
           </Link>
         ))}
+        <Link
+          href={linkFor(tab, 1, !onlyMine)}
+          className={
+            onlyMine
+              ? "ml-2 rounded-full bg-ink-800 px-3 py-1 text-xs font-medium text-white"
+              : "ml-2 rounded-full border border-ink-200 bg-white px-3 py-1 text-xs font-medium text-ink-600 hover:bg-ink-50"
+          }
+        >
+          Assigned to me
+        </Link>
         <span className="ml-1 self-center text-xs text-ink-500">
           {total.toLocaleString()} {tab}
         </span>
@@ -142,6 +162,18 @@ export default async function ExceptionsPage({ searchParams }: { searchParams: P
                     <td className="px-4 py-3">
                       <p className="font-medium text-ink-900">{t?.description ?? "Transaction"}</p>
                       <p className="text-xs text-ink-500">{t ? fmtDate(t.transaction_date) : "—"}</p>
+                      {e.assigned_to && (
+                        <p className="mt-0.5 text-xs text-ink-500">
+                          Assigned to <span className="font-medium text-ink-700">{(emailById.get(e.assigned_to) ?? "a former member").split("@")[0]}</span>
+                          {e.due_date ? (
+                            <span className={tab === "open" && e.due_date < today ? "font-medium text-status-exception" : ""}>
+                              {" "}
+                              · due {e.due_date}
+                              {tab === "open" && e.due_date < today ? " (overdue)" : ""}
+                            </span>
+                          ) : null}
+                        </p>
+                      )}
                     </td>
                     <td className="px-3 py-3">
                       <p className="text-ink-800">{t?.accounts?.name ?? "—"}</p>
@@ -170,7 +202,22 @@ export default async function ExceptionsPage({ searchParams }: { searchParams: P
                       )}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <ExceptionActions exceptionId={e.id} status={e.status} canAct={canAct} reviewHref={href} adjustHref={adjustHref(t)} />
+                      <div className="flex flex-col items-end gap-1">
+                        <ExceptionActions exceptionId={e.id} status={e.status} canAct={canAct} reviewHref={href} adjustHref={adjustHref(t)} />
+                        <div className="flex items-center gap-1">
+                          {canAct && e.status === "open" && (
+                            <AssignDialog
+                              type="exception"
+                              id={e.id}
+                              label={t?.description ?? "Exception"}
+                              members={assignable}
+                              currentAssigneeId={e.assigned_to ?? null}
+                              currentDueDate={e.due_date ?? null}
+                            />
+                          )}
+                          <CommentsButton type="exception" id={e.id} canComment label={t?.description ?? "Exception"} />
+                        </div>
+                      </div>
                     </td>
                   </tr>
                 );

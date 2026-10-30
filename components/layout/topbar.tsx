@@ -4,6 +4,7 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import Link from "next/link";
 import { ChevronDown, LogOut, Settings, User } from "lucide-react";
 import { logout } from "@/lib/actions/auth";
+import { NotificationBell } from "@/components/layout/notification-bell";
 import { ROLE_LABELS, type Role } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
@@ -30,6 +31,8 @@ export function Topbar({
         </span>
       </div>
 
+      <div className="flex items-center gap-1">
+      <NotificationBell />
       <DropdownMenu.Root>
         <DropdownMenu.Trigger className="flex items-center gap-2 rounded px-2 py-1.5 text-sm text-ink-600 hover:bg-ink-50">
           <div className="flex h-6 w-6 items-center justify-center rounded-full bg-ink-200 text-ink-600">
@@ -63,6 +66,7 @@ export function Topbar({
           </DropdownMenu.Content>
         </DropdownMenu.Portal>
       </DropdownMenu.Root>
+      </div>
     </header>
   );
 }

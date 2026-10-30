@@ -7,6 +7,7 @@ import { can } from "@/lib/permissions";
 import { formatCurrency } from "@/lib/utils";
 import { Badge, type BadgeStatus } from "@/components/ui/badge";
 import { JournalEntryActions } from "@/components/journal/entry-actions";
+import { CommentThread } from "@/components/collab/comment-thread";
 
 const STATUS_BADGE: Record<string, { status: BadgeStatus; label: string }> = {
   draft: { status: "pending", label: "Draft" },
@@ -180,6 +181,10 @@ export default async function JournalEntryDetailPage({ params }: { params: Promi
           </ul>
         </section>
       )}
+
+      <section className="rounded-xl border border-ink-100 bg-white p-5 shadow-subtle">
+        <CommentThread type="journal_entry" id={entry.id} canComment={!!membership} />
+      </section>
 
       <p className="text-xs text-ink-500">
         Created {entry.created_by ? `by ${emailById.get(entry.created_by) ?? "a former member"}` : ""} on{" "}

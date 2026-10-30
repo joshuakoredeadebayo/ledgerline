@@ -2,6 +2,7 @@ import { getCurrentMembership } from "@/lib/actions/membership";
 import { createClient } from "@/lib/supabase/server";
 import { ROLE_LABELS } from "@/lib/permissions";
 import { OrganizationNameForm } from "@/components/settings/organization-name-form";
+import { SignoffPolicyToggle } from "@/components/settings/signoff-policy-toggle";
 
 export default async function OrganizationSettingsPage() {
   const membership = await getCurrentMembership();
@@ -11,7 +12,7 @@ export default async function OrganizationSettingsPage() {
   const supabase = (await createClient()) as any;
 
   const [{ data: org }, { count: memberCount }, { count: entityCount }] = await Promise.all([
-    supabase.from("organizations").select("name, plan, created_at").eq("id", membership.organizationId).single(),
+    supabase.from("organizations").select("name, plan, created_at, require_signoff").eq("id", membership.organizationId).single(),
     supabase
       .from("organization_members")
       .select("id", { count: "exact", head: true })
@@ -42,6 +43,11 @@ export default async function OrganizationSettingsPage() {
 
       <section className="rounded-xl border border-ink-100 bg-white p-5 shadow-subtle">
         <OrganizationNameForm name={org?.name ?? membership.organizationName} canEdit={membership.role === "owner"} />
+      </section>
+
+      <section className="rounded-xl border border-ink-100 bg-white p-5 shadow-subtle">
+        <h2 className="mb-3 text-[15px] font-semibold text-ink-900">Approvals</h2>
+        <SignoffPolicyToggle initial={!!org?.require_signoff} canEdit={membership.role === "owner"} />
       </section>
 
       <section className="rounded-xl border border-ink-100 bg-white p-5 shadow-subtle">

@@ -28,7 +28,8 @@ export function ModalContent({
       <Dialog.Overlay className="fixed inset-0 z-40 bg-ink-900/40 data-[state=open]:animate-in data-[state=open]:fade-in" />
       <Dialog.Content
         className={cn(
-          "fixed left-1/2 top-1/2 z-50 w-full -translate-x-1/2 -translate-y-1/2 rounded-lg bg-white p-6 shadow-panel",
+          // Never taller than the screen: long forms scroll inside the popup instead of running off both edges.
+          "fixed left-1/2 top-1/2 z-50 max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg bg-white p-6 shadow-panel",
           sizeClass,
           className
         )}

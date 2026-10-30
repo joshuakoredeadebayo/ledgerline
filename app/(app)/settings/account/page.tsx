@@ -1,12 +1,24 @@
 import { getCurrentMembership } from "@/lib/actions/membership";
 import { logout } from "@/lib/actions/auth";
 import { ROLE_DESCRIPTIONS, ROLE_LABELS } from "@/lib/permissions";
+import { createClient } from "@/lib/supabase/server";
+import { isEmailConfigured } from "@/lib/email";
 import { ChangePasswordForm } from "@/components/settings/change-password-form";
+import { NotificationPreferencesForm } from "@/components/settings/notification-preferences-form";
 import { Button } from "@/components/ui/button";
 
 export default async function MyAccountPage() {
   const membership = await getCurrentMembership();
   if (!membership) return null;
+
+  const supabase = (await createClient()) as any;
+  const { data: prefRow } = await supabase.from("notification_preferences").select("*").eq("user_id", membership.userId).maybeSingle();
+  const prefs = {
+    emailAssignments: prefRow?.email_assignments ?? true,
+    emailReviews: prefRow?.email_reviews ?? true,
+    emailMentions: prefRow?.email_mentions ?? true,
+    emailReminders: prefRow?.email_reminders ?? true,
+  };
 
   const rows = [
     { label: "Email", value: membership.email },
@@ -32,6 +44,12 @@ export default async function MyAccountPage() {
           ))}
         </dl>
         <p className="mt-3 text-xs text-ink-500">To change your email address or role, ask an owner or admin.</p>
+      </section>
+
+      <section className="rounded-xl border border-ink-100 bg-white p-5 shadow-subtle">
+        <h2 className="text-[15px] font-semibold text-ink-900">Email notifications</h2>
+        <p className="mb-2 mt-0.5 text-xs text-ink-500">Choose which notifications also reach your inbox.</p>
+        <NotificationPreferencesForm initial={prefs} emailConfigured={isEmailConfigured()} />
       </section>
 
       <section className="rounded-xl border border-ink-100 bg-white p-5 shadow-subtle">

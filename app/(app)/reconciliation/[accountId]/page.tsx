@@ -13,6 +13,8 @@ import { testToolsEnabled } from "@/lib/test-tools";
 import { computeBalanceRec, kindForAccountType } from "@/lib/balance-rec";
 import { loadBalanceRecItems, loadSuggestedClosing } from "@/lib/balance-rec-loader";
 import { BalanceReconciliation } from "@/components/reconciliation/balance-reconciliation";
+import { SignoffPanel, type SignoffState } from "@/components/reconciliation/signoff-panel";
+import { CommentThread } from "@/components/collab/comment-thread";
 
 export default async function MatchingWorkspacePage({
   params,
@@ -220,6 +222,39 @@ export default async function MatchingWorkspacePage({
   const canMatch = membership ? can(membership.role, "reconciliation.match") : false;
   const canFinalize = membership ? can(membership.role, "reconciliation.finalize") : false;
 
+  // Sign-off: does this organization require a second person to approve, and where does this period stand?
+  let signoffRequired = false;
+  let signoffState: SignoffState | null = null;
+  let signoffReviewers: { id: string; email: string }[] = [];
+  let signoffNames: Record<string, string> = {};
+  if (membership && periodSummary) {
+    const { data: orgRow } = await supabase.from("organizations").select("require_signoff").eq("id", membership.organizationId).maybeSingle();
+    signoffRequired = !!orgRow?.require_signoff;
+    if (signoffRequired) {
+      const { data: review } = await supabase
+        .from("reconciliations")
+        .select("review_status, review_note, submitted_by, reviewer_id, reviewed_by, reviewed_at")
+        .eq("id", periodSummary.id)
+        .maybeSingle();
+      const { data: people } = await supabase.rpc("list_org_members", { p_org: membership.organizationId });
+      const members = ((people ?? []) as any[]).filter((m) => m.joined_at);
+      signoffNames = Object.fromEntries(members.map((m) => [m.user_id, m.email]));
+      signoffReviewers = members
+        .filter((m) => m.user_id !== membership.userId && can(m.role, "reconciliation.finalize"))
+        .map((m) => ({ id: m.user_id as string, email: m.email as string }));
+      signoffState = {
+        reconciliationId: periodSummary.id,
+        status: periodSummary.status,
+        reviewStatus: review?.review_status ?? null,
+        reviewNote: review?.review_note ?? null,
+        submittedBy: review?.submitted_by ?? null,
+        reviewerId: review?.reviewer_id ?? null,
+        reviewedBy: review?.reviewed_by ?? null,
+        reviewedAt: review?.reviewed_at ?? null,
+      };
+    }
+  }
+
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       <div>
@@ -263,7 +298,20 @@ export default async function MatchingWorkspacePage({
           currency={accountCurrency}
           finalizedAt={periodSummary.finalized_at}
           canFinalize={canFinalize}
+          signoffRequired={signoffRequired}
           transactionCount={Math.max(0, (activity[periodSummary.period_start.slice(0, 7)] ?? 0) - (excludedTxns?.length ?? 0))}
+        />
+      )}
+
+      {signoffRequired && signoffState && membership && (
+        <SignoffPanel
+          state={signoffState}
+          userId={membership.userId}
+          isOwner={membership.role === "owner"}
+          canPrepare={can(membership.role, "reconciliation.match")}
+          canReview={canFinalize}
+          reviewers={signoffReviewers}
+          names={signoffNames}
         />
       )}
 
@@ -311,6 +359,12 @@ export default async function MatchingWorkspacePage({
         <p className="text-sm text-ink-500">
           This period is finalized and locked. Use Reopen above if a correction is genuinely needed.
         </p>
+      )}
+
+      {periodSummary && membership && (
+        <section className="rounded-xl border border-ink-100 bg-white p-5 shadow-subtle">
+          <CommentThread type="reconciliation" id={periodSummary.id} canComment title={`Discussion for ${periodSummary.period_start.slice(0, 7)}`} />
+        </section>
       )}
     </div>
   );
