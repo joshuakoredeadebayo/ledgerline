@@ -8,6 +8,7 @@ import { formatCurrency } from "@/lib/utils";
 import { Badge, type BadgeStatus } from "@/components/ui/badge";
 import { JournalEntryActions } from "@/components/journal/entry-actions";
 import { CommentThread } from "@/components/collab/comment-thread";
+import { QuickBooksPush } from "@/components/journal/quickbooks-push";
 
 const STATUS_BADGE: Record<string, { status: BadgeStatus; label: string }> = {
   draft: { status: "pending", label: "Draft" },
@@ -28,7 +29,7 @@ export default async function JournalEntryDetailPage({ params }: { params: Promi
   const { data: entry } = await supabase
     .from("journal_entries")
     .select(
-      "id, entity_id, entry_date, description, status, reversed_entry_id, created_by, created_at, posted_at, entities(name, currency), journal_entry_lines(id, debit, credit, memo, vat_code, vat_direction, vat_rate, vat_amount, vat_category, accounts(id, name, code, is_reconcilable))"
+      "id, entity_id, entry_date, description, status, reversed_entry_id, created_by, created_at, posted_at, qb_journal_entry_id, qb_synced_at, qb_error, entities(name, currency), journal_entry_lines(id, debit, credit, memo, vat_code, vat_direction, vat_rate, vat_amount, vat_category, accounts(id, name, code, is_reconcilable))"
     )
     .eq("id", entryId)
     .maybeSingle();
@@ -59,6 +60,12 @@ export default async function JournalEntryDetailPage({ params }: { params: Promi
 
   const { data: rosterData } = membership ? await supabase.rpc("list_org_members", { p_org: membership.organizationId }) : { data: [] };
   const emailById = new Map<string, string>(((rosterData ?? []) as any[]).map((m) => [m.user_id, m.email]));
+
+  // Is there a QuickBooks company this entity's entries can be sent to?
+  const { data: qbItems } = membership
+    ? await supabase.from("quickbooks_items").select("id, entity_id").eq("organization_id", membership.organizationId)
+    : { data: [] };
+  const qbAvailable = ((qbItems ?? []) as { id: string; entity_id: string | null }[]).some((i) => i.entity_id === entry.entity_id || i.entity_id === null);
 
   const badge = STATUS_BADGE[entry.status] ?? { status: "neutral" as BadgeStatus, label: entry.status };
 
@@ -180,6 +187,16 @@ export default async function JournalEntryDetailPage({ params }: { params: Promi
             ))}
           </ul>
         </section>
+      )}
+
+      {entry.status !== "draft" && qbAvailable && (
+        <QuickBooksPush
+          entryId={entry.id}
+          qbId={entry.qb_journal_entry_id ?? null}
+          syncedAt={entry.qb_synced_at ?? null}
+          previousError={entry.qb_error ?? null}
+          canPost={membership ? can(membership.role, "journal_entries.post") : false}
+        />
       )}
 
       <section className="rounded-xl border border-ink-100 bg-white p-5 shadow-subtle">

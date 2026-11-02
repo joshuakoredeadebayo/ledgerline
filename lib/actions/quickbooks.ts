@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentMembership } from "@/lib/actions/membership";
 import { assertPermission } from "@/lib/permissions";
 import {
+  createQuickBooksRecord,
   revokeQuickBooksToken,
   getValidAccessToken,
   queryQuickBooks,
@@ -13,6 +14,7 @@ import {
 } from "@/lib/quickbooks/client";
 import { getOrCreateReconciliationPeriod, recomputeReconciliationStatus } from "@/lib/reconciliation-status";
 import { mapBillPayment, mapJournalEntry, mapPayment, mapTransfer, type LedgerRow } from "@/lib/quickbooks/transactions";
+import { buildQuickBooksJournalEntry, isLedgerlineEntry, quickBooksAccountType, quickBooksErrorMessage } from "@/lib/quickbooks/journal-payload";
 
 export interface QuickBooksConnection {
   id: string;
@@ -407,7 +409,7 @@ export async function syncQuickBooksTransactions(
       { type: "Customer payments", rows: payments.flatMap(mapPayment), reportMissing: true },
       // Most journal lines hit income, expense or equity accounts we never import, so a
       // missing account here is normal and isn't reported as a problem.
-      { type: "Journal entries", rows: journalEntries.flatMap(mapJournalEntry), reportMissing: false },
+      { type: "Journal entries", rows: journalEntries.filter((j: any) => !isLedgerlineEntry(j.PrivateNote)).flatMap(mapJournalEntry), reportMissing: false },
     ];
     for (const { type, rows, reportMissing } of extraTypes) {
       for (const row of rows) {
@@ -511,4 +513,148 @@ export async function disconnectQuickBooks(connectionId: string): Promise<{ erro
   revalidatePath("/settings/integrations");
   revalidatePath("/entities", "layout");
   return {};
+}
+
+
+// ────────────────────────────────────────────────────────────────
+// Sending journal entries to QuickBooks
+// ────────────────────────────────────────────────────────────────
+
+/** Finds the QuickBooks account with this name, or creates it, and records the link on the Ledgerline account. */
+async function ensureQuickBooksAccount(
+  supabase: any,
+  item: QuickBooksItemRow,
+  accessToken: string,
+  account: { id: string; name: string; account_type: string; is_reconcilable: boolean }
+): Promise<{ qbId?: string; error?: string }> {
+  const safeName = account.name.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  const found = await queryQuickBooks(item.realm_id, accessToken, `SELECT * FROM Account WHERE Name = '${safeName}'`).catch(() => []);
+  let qbId: string | undefined = found[0]?.Id;
+
+  if (!qbId) {
+    const created = await createQuickBooksRecord<{ Id: string }>(item.realm_id, accessToken, "account", {
+      Name: account.name,
+      ...quickBooksAccountType(account.account_type, account.is_reconcilable),
+    });
+    if (!created.ok) return { error: `QuickBooks wouldn't create the account "${account.name}": ${quickBooksErrorMessage(created.text)}` };
+    qbId = created.record.Id;
+  }
+
+  const { error } = await supabase.from("accounts").update({ quickbooks_account_id: qbId, quickbooks_item_id: item.id }).eq("id", account.id);
+  if (error) {
+    return {
+      error:
+        error.code === "23505"
+          ? `An account imported from QuickBooks already uses "${account.name}". Link the two under Entities, then send the entry again.`
+          : error.message,
+    };
+  }
+  return { qbId };
+}
+
+/**
+ * Sends a posted journal entry to QuickBooks so the books there match. The entry carries a marker in its
+ * note so Ledgerline recognises it on the next sync and doesn't bring it back as a duplicate. Safe to
+ * retry: each entry is sent with its own request id, so QuickBooks never records it twice.
+ *
+ * Every account on the entry must exist in QuickBooks. If some don't, nothing is sent and the missing
+ * ones are returned; sending again with createMissingAccounts creates them there first.
+ */
+export async function pushJournalEntryToQuickBooks(
+  entryId: string,
+  options: { createMissingAccounts?: boolean } = {}
+): Promise<{ error?: string; qbId?: string; missingAccounts?: string[] }> {
+  const membership = await getCurrentMembership();
+  if (!membership) return { error: "Not signed in." };
+  assertPermission(membership.role, "journal_entries.post");
+
+  const supabase = (await createClient()) as any;
+  const { data: entry } = await supabase
+    .from("journal_entries")
+    .select(
+      "id, entity_id, entry_date, description, status, qb_journal_entry_id, journal_entry_lines(id, debit, credit, memo, account_id, accounts(id, name, account_type, is_reconcilable, quickbooks_account_id, quickbooks_item_id))"
+    )
+    .eq("id", entryId)
+    .maybeSingle();
+  if (!entry) return { error: "Journal entry not found." };
+  if (entry.status === "draft") return { error: "Post the entry before sending it to QuickBooks." };
+  if (entry.qb_journal_entry_id) return { qbId: entry.qb_journal_entry_id };
+
+  const item = await getConnectionForEntity(membership.organizationId, entry.entity_id);
+  if (!item) return { error: "This entity isn't connected to QuickBooks. Connect it under Settings, then Integrations." };
+
+  let accessToken: string;
+  try {
+    accessToken = await getValidAccessToken(item, supabase);
+  } catch (err: any) {
+    return { error: err?.message ?? "Could not reach QuickBooks." };
+  }
+
+  const lines: any[] = entry.journal_entry_lines ?? [];
+  const accounts = new Map<string, any>();
+  for (const l of lines) if (l.accounts) accounts.set(l.accounts.id, l.accounts);
+
+  // An account that belongs to a different QuickBooks company can't be used here.
+  for (const a of accounts.values()) {
+    if (a.quickbooks_account_id && a.quickbooks_item_id && a.quickbooks_item_id !== item.id) {
+      return { error: `The account "${a.name}" belongs to a different QuickBooks company than this entity uses.` };
+    }
+  }
+
+  const unmapped = [...accounts.values()].filter((a) => !a.quickbooks_account_id);
+  if (unmapped.length > 0 && !options.createMissingAccounts) {
+    return { error: "Some accounts aren't in QuickBooks yet.", missingAccounts: unmapped.map((a) => a.name) };
+  }
+  for (const a of unmapped) {
+    const ensured = await ensureQuickBooksAccount(supabase, item, accessToken, a);
+    if (ensured.error) return { error: ensured.error };
+    a.quickbooks_account_id = ensured.qbId;
+  }
+
+  const built = buildQuickBooksJournalEntry({
+    entryId: entry.id,
+    entryDate: entry.entry_date,
+    description: entry.description,
+    lines: lines.map((l) => ({
+      qbAccountId: accounts.get(l.account_id)?.quickbooks_account_id,
+      debit: Number(l.debit),
+      credit: Number(l.credit),
+      memo: l.memo,
+    })),
+  });
+  if ("error" in built) return { error: built.error };
+
+  const sent = await createQuickBooksRecord<{ Id: string }>(item.realm_id, accessToken, "journalentry", built.body, entry.id);
+  if (!sent.ok) {
+    const message = quickBooksErrorMessage(sent.text);
+    await supabase.from("journal_entries").update({ qb_error: message }).eq("id", entryId);
+    await supabase.from("audit_log").insert({
+      organization_id: membership.organizationId,
+      entity_id: entry.entity_id,
+      actor_id: membership.userId,
+      action: "journal_entry.quickbooks_failed",
+      target_table: "journal_entries",
+      target_id: entryId,
+      after: { error: message },
+    });
+    revalidatePath(`/journal-entries/${entryId}`);
+    return { error: `QuickBooks refused the entry: ${message}` };
+  }
+
+  await supabase
+    .from("journal_entries")
+    .update({ qb_journal_entry_id: sent.record.Id, qb_synced_at: new Date().toISOString(), qb_error: null })
+    .eq("id", entryId);
+  await supabase.from("audit_log").insert({
+    organization_id: membership.organizationId,
+    entity_id: entry.entity_id,
+    actor_id: membership.userId,
+    action: "journal_entry.sent_to_quickbooks",
+    target_table: "journal_entries",
+    target_id: entryId,
+    after: { quickbooks_id: sent.record.Id },
+  });
+  revalidatePath(`/journal-entries/${entryId}`);
+  revalidatePath("/journal-entries");
+  return { qbId: sent.record.Id };
 }

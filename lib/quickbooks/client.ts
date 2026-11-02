@@ -183,6 +183,34 @@ export async function queryQuickBooks<T = any>(realmId: string, accessToken: str
   return arrayKey ? queryResponse[arrayKey] : [];
 }
 
+/**
+ * Creates a record in QuickBooks (a journal entry, an account). `requestId` makes the call safe to
+ * repeat: QuickBooks returns the original result instead of creating a second copy when it sees the
+ * same id again, so a retry after a timeout can't duplicate an entry.
+ */
+export async function createQuickBooksRecord<T = any>(
+  realmId: string,
+  accessToken: string,
+  resource: "journalentry" | "account",
+  body: Record<string, unknown>,
+  requestId?: string
+): Promise<{ ok: true; record: T } | { ok: false; status: number; text: string }> {
+  const query = `minorversion=75${requestId ? `&requestid=${encodeURIComponent(requestId.slice(0, 50))}` : ""}`;
+  const response = await fetch(`${apiBaseUrl()}/v3/company/${realmId}/${resource}?${query}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) return { ok: false, status: response.status, text: await response.text() };
+  const data = await response.json();
+  const key = resource === "journalentry" ? "JournalEntry" : "Account";
+  return { ok: true, record: data[key] as T };
+}
+
 export interface QuickBooksItemRow {
   id: string;
   realm_id: string;
