@@ -5,6 +5,7 @@ import { useState, useTransition } from "react";
 import { closeException, reopenException, type ExceptionOutcome } from "@/lib/actions/exceptions";
 import { DISMISS_REASONS, RESOLVE_REASONS } from "@/lib/exception-reasons";
 import { Modal, ModalContent } from "@/components/ui/modal";
+import { ACTION_BUTTON, ACTION_LINK } from "@/components/ui/action-styles";
 import { Button } from "@/components/ui/button";
 
 /** Resolve / Dismiss (with a reason) for an open exception, Reopen for a closed one, plus a link to the account. */
@@ -14,6 +15,7 @@ export function ExceptionActions({
   canAct,
   reviewHref,
   adjustHref,
+  secondary,
 }: {
   exceptionId: string;
   status: "open" | "resolved" | "dismissed";
@@ -21,6 +23,8 @@ export function ExceptionActions({
   reviewHref: string;
   /** Opens a pre-filled journal entry for a bank item that hasn't been booked yet. */
   adjustHref?: string;
+  /** Extra quiet actions for the second row, such as Assign and Comments. */
+  secondary?: React.ReactNode;
 }) {
   const [mode, setMode] = useState<ExceptionOutcome | null>(null);
   const [reason, setReason] = useState("");
@@ -48,43 +52,49 @@ export function ExceptionActions({
   };
 
   return (
-    <div className="flex flex-col items-end gap-1">
-      <div className="flex flex-wrap items-center justify-end gap-1">
-        <Link href={reviewHref} className="inline-flex h-8 items-center rounded px-3 text-sm font-medium text-accent-600 hover:bg-accent-50">
+    <div className="flex flex-col items-end gap-1.5">
+      {/* Row 1: the decision. */}
+      {canAct && (
+        <div className="flex items-center justify-end gap-2">
+          {status === "open" ? (
+            <>
+              <button type="button" className={ACTION_BUTTON} onClick={() => open("resolved")}>
+                Resolve
+              </button>
+              <button type="button" className={ACTION_BUTTON} onClick={() => open("dismissed")}>
+                Dismiss
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              className={ACTION_BUTTON}
+              disabled={pending}
+              onClick={() => {
+                setError(null);
+                startTransition(async () => {
+                  const res = await reopenException(exceptionId);
+                  if (res.error) setError(res.error);
+                });
+              }}
+            >
+              Reopen
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Row 2: look closer, fix it, hand it on, discuss it. */}
+      <div className="flex items-center justify-end gap-0.5">
+        <Link href={reviewHref} className={ACTION_LINK}>
           Review
         </Link>
         {canAct && status === "open" && adjustHref && (
-          <Link href={adjustHref} className="inline-flex h-8 items-center rounded px-3 text-sm font-medium text-accent-600 hover:bg-accent-50" title="Record a journal entry for this bank item">
+          <Link href={adjustHref} className={ACTION_LINK} title="Record a journal entry for this bank item">
             Adjust
           </Link>
         )}
-        {canAct && status === "open" && (
-          <>
-            <Button type="button" size="sm" variant="secondary" onClick={() => open("resolved")}>
-              Resolve
-            </Button>
-            <Button type="button" size="sm" variant="ghost" onClick={() => open("dismissed")}>
-              Dismiss
-            </Button>
-          </>
-        )}
-        {canAct && status !== "open" && (
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            disabled={pending}
-            onClick={() => {
-              setError(null);
-              startTransition(async () => {
-                const res = await reopenException(exceptionId);
-                if (res.error) setError(res.error);
-              });
-            }}
-          >
-            Reopen
-          </Button>
-        )}
+        {secondary}
       </div>
       {error && mode === null && <p className="max-w-[16rem] text-right text-xs text-status-exception">{error}</p>}
 

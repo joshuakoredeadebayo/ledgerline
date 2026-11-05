@@ -5,6 +5,7 @@ import { useState, useTransition } from "react";
 import { UserPlus } from "lucide-react";
 import { assignItem } from "@/lib/actions/collaboration";
 import { Modal, ModalContent, ModalTrigger } from "@/components/ui/modal";
+import { ACTION_LINK } from "@/components/ui/action-styles";
 import { Button } from "@/components/ui/button";
 
 export interface Assignable {
@@ -55,10 +56,10 @@ export function AssignDialog({
   return (
     <Modal open={open} onOpenChange={setOpen}>
       <ModalTrigger asChild>
-        <Button type="button" size="sm" variant="ghost">
+        <button type="button" className={ACTION_LINK}>
           <UserPlus className="h-3.5 w-3.5" />
           {buttonText ?? (currentAssigneeId ? "Reassign" : "Assign")}
-        </Button>
+        </button>
       </ModalTrigger>
       <ModalContent title="Assign" description={label}>
         <div className="space-y-4">

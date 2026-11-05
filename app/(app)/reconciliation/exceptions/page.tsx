@@ -223,23 +223,29 @@ export default async function ExceptionsPage({ searchParams }: { searchParams: P
                         </div>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex flex-col items-end gap-1">
-                        <ExceptionActions exceptionId={e.id} status={e.status} canAct={canAct} reviewHref={href} adjustHref={adjustHref(t)} />
-                        <div className="flex items-center gap-1">
-                          {canAct && e.status === "open" && (
-                            <AssignDialog
-                              type="exception"
-                              id={e.id}
-                              label={t?.description ?? "Exception"}
-                              members={assignable}
-                              currentAssigneeId={e.assigned_to ?? null}
-                              currentDueDate={e.due_date ?? null}
-                            />
-                          )}
-                          <CommentsButton type="exception" id={e.id} canComment label={t?.description ?? "Exception"} />
-                        </div>
-                      </div>
+                    <td className="whitespace-nowrap px-4 py-3 text-right">
+                      <ExceptionActions
+                        exceptionId={e.id}
+                        status={e.status}
+                        canAct={canAct}
+                        reviewHref={href}
+                        adjustHref={adjustHref(t)}
+                        secondary={
+                          <>
+                            {canAct && e.status === "open" && (
+                              <AssignDialog
+                                type="exception"
+                                id={e.id}
+                                label={t?.description ?? "Exception"}
+                                members={assignable}
+                                currentAssigneeId={e.assigned_to ?? null}
+                                currentDueDate={e.due_date ?? null}
+                              />
+                            )}
+                            <CommentsButton type="exception" id={e.id} canComment label={t?.description ?? "Exception"} />
+                          </>
+                        }
+                      />
                     </td>
                   </tr>
                 );
