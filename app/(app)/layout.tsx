@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCurrentMembership } from "@/lib/actions/membership";
 import { Sidebar } from "@/components/layout/sidebar";
+import { DatabaseBanner } from "@/components/layout/database-banner";
 import { Topbar } from "@/components/layout/topbar";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -20,7 +21,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           email={membership.email}
           role={membership.role}
         />
-        <main className="flex-1 overflow-y-auto p-6">{children}</main>
+        <main className="flex-1 overflow-y-auto p-6">
+          <div className="mx-auto max-w-5xl">
+            <DatabaseBanner role={membership.role} />
+          </div>
+          {children}
+        </main>
       </div>
     </div>
   );

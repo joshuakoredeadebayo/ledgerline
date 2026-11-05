@@ -6,6 +6,7 @@ import { can } from "@/lib/permissions";
 import { formatCurrency } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/shared/empty-state";
+import { withFallback } from "@/lib/safe-query";
 import { ExceptionActions } from "@/components/reconciliation/exception-actions";
 import { AssignDialog } from "@/components/collab/assign-dialog";
 import { CommentsButton } from "@/components/collab/comments-button";
@@ -64,17 +65,26 @@ export default async function ExceptionsPage({ searchParams }: { searchParams: P
   // Cast to `any`: some columns are newer than the generated Supabase types.
   const supabase = (await createClient()) as any;
 
-  let query = supabase
-    .from("exceptions")
-    .select(
-      "id, exception_type, severity, status, created_at, resolved_at, resolved_by, resolution_reason, resolution_note, assigned_to, due_date, transactions(id, amount, currency, transaction_date, description, account_id, entity_id, source, raw_payload, accounts(name, entities(name)))",
-      { count: "exact" }
-    )
-    .eq("status", tab)
-    .order(tab === "open" ? "created_at" : "resolved_at", { ascending: false, nullsFirst: false })
-    .range(from, from + PAGE_SIZE - 1);
-  if (onlyMine && membership) query = query.eq("assigned_to", membership.userId);
-  const { data, count } = await query;
+  // The newest columns (assignments) come from database update 0015. If that hasn't been run yet, fall back to
+  // the older query so the list still shows, and say what's missing instead of showing an empty page.
+  const TXN = "transactions(id, amount, currency, transaction_date, description, account_id, entity_id, source, raw_payload, accounts(name, entities(name)))";
+  const BASE_COLS = "id, exception_type, severity, status, created_at, resolved_at, resolved_by, resolution_reason, resolution_note";
+  const buildQuery = (cols: string, mineFilter: boolean) => {
+    let q = supabase
+      .from("exceptions")
+      .select(`${cols}, ${TXN}`, { count: "exact" })
+      .eq("status", tab)
+      .order(tab === "open" ? "created_at" : "resolved_at", { ascending: false, nullsFirst: false })
+      .range(from, from + PAGE_SIZE - 1);
+    if (mineFilter && membership) q = q.eq("assigned_to", membership.userId);
+    return q;
+  };
+  const result = await withFallback(
+    () => buildQuery(`${BASE_COLS}, assigned_to, due_date`, onlyMine),
+    () => buildQuery(BASE_COLS, false)
+  );
+  const { data, count } = result;
+  const loadError = result.error && !result.degraded ? result.error.message ?? "The list couldn't be loaded." : null;
 
   const rows: any[] = data ?? [];
   const total = count ?? 0;
@@ -140,6 +150,18 @@ export default async function ExceptionsPage({ searchParams }: { searchParams: P
           {total.toLocaleString()} {tab}
         </span>
       </div>
+
+      {loadError && (
+        <p role="alert" className="rounded-lg border border-status-exception/20 bg-status-exceptionBg px-4 py-3 text-sm text-status-exception">
+          The exceptions couldn&apos;t be loaded: {loadError}
+        </p>
+      )}
+      {result.degraded && (
+        <p className="rounded-lg border border-status-pending/30 bg-status-pendingBg px-4 py-3 text-sm text-ink-800">
+          Assignments are switched off because the latest database update (<span className="font-medium">0015_collaboration.sql</span>) hasn&apos;t been run yet.
+          Everything else works. Ask an owner to run it in the Supabase SQL editor.
+        </p>
+      )}
 
       {rows.length > 0 ? (
         <div className="overflow-x-auto rounded-xl border border-ink-100 bg-white shadow-subtle">

@@ -2,6 +2,8 @@ import { getCurrentMembership } from "@/lib/actions/membership";
 import { createClient } from "@/lib/supabase/server";
 import { ROLE_LABELS } from "@/lib/permissions";
 import { OrganizationNameForm } from "@/components/settings/organization-name-form";
+import { withFallback } from "@/lib/safe-query";
+import { loadSchemaHealth, sqlFileFor } from "@/components/layout/database-banner";
 import { SignoffPolicyToggle } from "@/components/settings/signoff-policy-toggle";
 
 export default async function OrganizationSettingsPage() {
@@ -12,7 +14,10 @@ export default async function OrganizationSettingsPage() {
   const supabase = (await createClient()) as any;
 
   const [{ data: org }, { count: memberCount }, { count: entityCount }] = await Promise.all([
-    supabase.from("organizations").select("name, plan, created_at, require_signoff").eq("id", membership.organizationId).single(),
+    withFallback(
+      () => supabase.from("organizations").select("name, plan, created_at, require_signoff").eq("id", membership.organizationId).single(),
+      () => supabase.from("organizations").select("name, plan, created_at").eq("id", membership.organizationId).single()
+    ),
     supabase
       .from("organization_members")
       .select("id", { count: "exact", head: true })
@@ -20,6 +25,9 @@ export default async function OrganizationSettingsPage() {
       .not("joined_at", "is", null),
     supabase.from("entities").select("id", { count: "exact", head: true }).eq("organization_id", membership.organizationId),
   ]);
+
+  const schemaChecks = membership.role === "owner" || membership.role === "admin" ? await loadSchemaHealth() : null;
+  const showHealth = membership.role === "owner" || membership.role === "admin";
 
   const details = [
     { label: "Plan", value: org?.plan ? String(org.plan).replace(/^./, (c: string) => c.toUpperCase()) : "—" },
@@ -44,6 +52,32 @@ export default async function OrganizationSettingsPage() {
       <section className="rounded-xl border border-ink-100 bg-white p-5 shadow-subtle">
         <OrganizationNameForm name={org?.name ?? membership.organizationName} canEdit={membership.role === "owner"} />
       </section>
+
+      {showHealth && (
+        <section className="rounded-xl border border-ink-100 bg-white p-5 shadow-subtle">
+          <h2 className="text-[15px] font-semibold text-ink-900">Database updates</h2>
+          <p className="mb-3 mt-0.5 text-xs text-ink-500">
+            Ledgerline&apos;s database is updated with numbered SQL files, run once each in the Supabase SQL editor. This shows which have been run.
+          </p>
+          {schemaChecks === null ? (
+            <p className="text-sm text-ink-700">
+              This check isn&apos;t installed yet. Run <span className="font-medium">0017_schema_health.sql</span> in the Supabase SQL editor to turn it on.
+            </p>
+          ) : (
+            <ul className="divide-y divide-ink-100 text-sm">
+              {schemaChecks.map((c) => (
+                <li key={c.migration} className="flex items-start justify-between gap-4 py-2.5">
+                  <span className="text-ink-800">
+                    <span className="font-medium text-ink-900">{c.migration}</span> · {c.description}
+                    {!c.applied && <span className="block text-xs text-status-exception">Not run yet. Run {sqlFileFor(c.migration)}.</span>}
+                  </span>
+                  <span className={c.applied ? "text-status-matched" : "font-medium text-status-exception"}>{c.applied ? "Done" : "Missing"}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       <section className="rounded-xl border border-ink-100 bg-white p-5 shadow-subtle">
         <h2 className="mb-3 text-[15px] font-semibold text-ink-900">Approvals</h2>

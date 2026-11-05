@@ -10,11 +10,23 @@ export default async function ReconciliationPage() {
   const supabase = await createClient();
   const counts = await getAttentionCounts();
 
-  const { data: accounts } = await supabase
+  const { data: accounts, error: accountsError } = await supabase
     .from("accounts")
     .select("id, name, code, entity_id, entities(name)")
     .eq("is_reconcilable", true)
     .order("name");
+
+  // If the list is empty, find out why, so the page can say so instead of just "nothing here".
+  let archivedAccounts = 0;
+  let archivedEntities = 0;
+  if (!accountsError && (accounts ?? []).length === 0) {
+    const [{ count: a }, { count: e }] = await Promise.all([
+      supabase.from("accounts").select("id", { count: "exact", head: true }).not("archived_at", "is", null),
+      supabase.from("entities").select("id", { count: "exact", head: true }).not("archived_at", "is", null),
+    ]);
+    archivedAccounts = a ?? 0;
+    archivedEntities = e ?? 0;
+  }
 
   // Single pass over unmatched transactions, counted per account in JS —
   // avoids N+1 queries and avoids fragile nested-relation filter strings
@@ -135,10 +147,16 @@ export default async function ReconciliationPage() {
         <EmptyState
           icon={<GitMerge className="h-8 w-8" />}
           title="No reconcilable accounts yet"
-          description="Add an entity and at least one account before reconciliation can begin."
+          description={
+            accountsError
+              ? `The accounts couldn't be loaded: ${accountsError.message}`
+              : archivedEntities > 0 || archivedAccounts > 0
+                ? `Nothing is being reconciled because ${archivedEntities > 0 ? `${archivedEntities} entit${archivedEntities === 1 ? "y is" : "ies are"} archived` : `${archivedAccounts} account${archivedAccounts === 1 ? " is" : "s are"} archived`}. Open Entities, find the archived ones at the bottom, and choose Restore.`
+                : "Add an entity and at least one account before reconciliation can begin."
+          }
           action={
             <Link href="/entities" className="text-sm font-medium text-accent-600 hover:text-accent-700">
-              Set up entities →
+              {archivedEntities > 0 || archivedAccounts > 0 ? "Go to Entities →" : "Set up entities →"}
             </Link>
           }
         />

@@ -10,6 +10,7 @@ import { refreshCloseChecklistIfPeriodExists } from "@/lib/close-period-status";
 import { testToolsEnabled } from "@/lib/test-tools";
 import { EXCLUDE_REASONS } from "@/lib/exception-reasons";
 import { computeBalanceRec, kindForAccountType } from "@/lib/balance-rec";
+import { withFallback } from "@/lib/safe-query";
 import { loadBalanceRecItems } from "@/lib/balance-rec-loader";
 
 export type ActionState = { error?: string; fieldErrors?: Record<string, string> } | null;
@@ -289,11 +290,21 @@ export async function finalizeReconciliation(reconciliationId: string, accountId
   // (`supabase gen types typescript --linked`). Without this, every query below
   // fails to type-check against the stale generated types.
   const supabase = (await createClient()) as any;
-  const { data: recon } = await supabase
-    .from("reconciliations")
-    .select("id, entity_id, status, period_start, period_end, statement_closing_balance, book_closing_balance, submitted_by, review_status, reviewed_by")
-    .eq("id", reconciliationId)
-    .single();
+  // The sign-off columns come from database update 0015; without it, finalizing still works the old way.
+  const { data: recon } = await withFallback(
+    () =>
+      supabase
+        .from("reconciliations")
+        .select("id, entity_id, status, period_start, period_end, statement_closing_balance, book_closing_balance, submitted_by, review_status, reviewed_by")
+        .eq("id", reconciliationId)
+        .single(),
+    () =>
+      supabase
+        .from("reconciliations")
+        .select("id, entity_id, status, period_start, period_end, statement_closing_balance, book_closing_balance")
+        .eq("id", reconciliationId)
+        .single()
+  );
 
   if (!recon) return { error: "Reconciliation period not found." };
   if (recon.status !== "reconciled") {

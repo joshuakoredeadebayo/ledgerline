@@ -10,6 +10,7 @@ import { formatDate } from "@/lib/utils";
 import { ChecklistItemRow } from "@/components/close/checklist-item-row";
 import { CloseButton } from "@/components/close/close-button";
 import { AssignDialog } from "@/components/collab/assign-dialog";
+import { withFallback } from "@/lib/safe-query";
 
 export default async function ClosePeriodPage({ params }: { params: Promise<{ period: string }> }) {
   const { period: closePeriodId } = await params;
@@ -42,11 +43,12 @@ export default async function ClosePeriodPage({ params }: { params: Promise<{ pe
 
   if (!period) notFound();
 
-  const { data: items } = await supabase
-    .from("close_checklist_items")
-    .select("id, title, description, status, is_auto, assignee_id, due_date, completed_at")
-    .eq("close_period_id", closePeriodId)
-    .order("sort_order");
+  // Due dates come from database update 0015; without it the checklist still loads, just without them.
+  const itemsResult = await withFallback(
+    () => supabase.from("close_checklist_items").select("id, title, description, status, is_auto, assignee_id, due_date, completed_at").eq("close_period_id", closePeriodId).order("sort_order"),
+    () => supabase.from("close_checklist_items").select("id, title, description, status, is_auto, assignee_id, completed_at").eq("close_period_id", closePeriodId).order("sort_order")
+  );
+  const items = itemsResult.data;
 
   const { data: rosterData } = membership ? await supabase.rpc("list_org_members", { p_org: membership.organizationId }) : { data: [] };
   const people = ((rosterData ?? []) as { user_id: string; email: string; role: any; joined_at: string | null }[]).filter((m) => m.joined_at);

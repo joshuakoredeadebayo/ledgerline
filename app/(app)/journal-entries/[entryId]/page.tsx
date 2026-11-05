@@ -9,6 +9,7 @@ import { Badge, type BadgeStatus } from "@/components/ui/badge";
 import { JournalEntryActions } from "@/components/journal/entry-actions";
 import { CommentThread } from "@/components/collab/comment-thread";
 import { QuickBooksPush } from "@/components/journal/quickbooks-push";
+import { withFallback } from "@/lib/safe-query";
 
 const STATUS_BADGE: Record<string, { status: BadgeStatus; label: string }> = {
   draft: { status: "pending", label: "Draft" },
@@ -26,13 +27,12 @@ export default async function JournalEntryDetailPage({ params }: { params: Promi
   // Cast to `any`: some columns are newer than the generated Supabase types.
   const supabase = (await createClient()) as any;
 
-  const { data: entry } = await supabase
-    .from("journal_entries")
-    .select(
-      "id, entity_id, entry_date, description, status, reversed_entry_id, created_by, created_at, posted_at, qb_journal_entry_id, qb_synced_at, qb_error, entities(name, currency), journal_entry_lines(id, debit, credit, memo, vat_code, vat_direction, vat_rate, vat_amount, vat_category, accounts(id, name, code, is_reconcilable))"
-    )
-    .eq("id", entryId)
-    .maybeSingle();
+  // The QuickBooks columns come from database update 0016; without it the entry still opens.
+  const entryResult = await withFallback(
+    () => supabase.from("journal_entries").select("id, entity_id, entry_date, description, status, reversed_entry_id, created_by, created_at, posted_at, qb_journal_entry_id, qb_synced_at, qb_error, entities(name, currency), journal_entry_lines(id, debit, credit, memo, vat_code, vat_direction, vat_rate, vat_amount, vat_category, accounts(id, name, code, is_reconcilable))").eq("id", entryId).maybeSingle(),
+    () => supabase.from("journal_entries").select("id, entity_id, entry_date, description, status, reversed_entry_id, created_by, created_at, posted_at, entities(name, currency), journal_entry_lines(id, debit, credit, memo, vat_code, vat_direction, vat_rate, vat_amount, vat_category, accounts(id, name, code, is_reconcilable))").eq("id", entryId).maybeSingle()
+  );
+  const entry = entryResult.data;
   if (!entry) notFound();
 
   const lines: any[] = entry.journal_entry_lines ?? [];
@@ -189,7 +189,7 @@ export default async function JournalEntryDetailPage({ params }: { params: Promi
         </section>
       )}
 
-      {entry.status !== "draft" && qbAvailable && (
+      {entry.status !== "draft" && qbAvailable && !entryResult.degraded && (
         <QuickBooksPush
           entryId={entry.id}
           qbId={entry.qb_journal_entry_id ?? null}
