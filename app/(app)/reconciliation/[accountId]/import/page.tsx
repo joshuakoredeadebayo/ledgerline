@@ -16,7 +16,7 @@ export default async function ImportStatementPage({ params }: { params: Promise<
   const supabase = (await createClient()) as any;
   const { data: account } = await supabase
     .from("accounts")
-    .select("id, name, is_reconcilable, archived_at, entities(name, currency)")
+    .select("id, name, is_reconcilable, archived_at, entities!entity_id(name, currency)")
     .eq("id", accountId)
     .maybeSingle();
   if (!account) notFound();

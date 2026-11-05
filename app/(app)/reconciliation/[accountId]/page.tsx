@@ -60,7 +60,7 @@ export default async function MatchingWorkspacePage({
 
   const { data: account } = await supabase
     .from("accounts")
-    .select("id, name, entity_id, entities(name, currency)")
+    .select("id, name, entity_id, entities!entity_id(name, currency)")
     .eq("id", accountId)
     .single();
 

@@ -91,7 +91,7 @@ export function monthBounds(month: string): { start: string; end: string } {
 export async function loadReconciliationReport(supabase: any, accountId: string, month: string): Promise<ReconciliationReport | null> {
   const { data: account } = await supabase
     .from("accounts")
-    .select("id, name, code, account_type, entity_id, entities(name, currency)")
+    .select("id, name, code, account_type, entity_id, entities!entity_id(name, currency)")
     .eq("id", accountId)
     .maybeSingle();
   if (!account) return null;

@@ -4,13 +4,14 @@
 -- in the rate never rewrites earlier entries. Safe to run more than once. Run it in the Supabase SQL editor.
 
 -- ────────────────────────────────────────────────────────────────
--- 1. Entity VAT settings
+-- 1. Entity VAT settings (the two VAT account ids are plain ids, not foreign keys: a link from entities to accounts
+--    would make 'accounts to entities' queries ambiguous. The app checks them when settings are saved.)
 -- ────────────────────────────────────────────────────────────────
 alter table entities add column if not exists vat_registered boolean not null default false;
 alter table entities add column if not exists vat_number text;
 alter table entities add column if not exists vat_rate numeric(5,2) not null default 7.5;
-alter table entities add column if not exists vat_output_account_id uuid references accounts(id) on delete set null;
-alter table entities add column if not exists vat_input_account_id uuid references accounts(id) on delete set null;
+alter table entities add column if not exists vat_output_account_id uuid;
+alter table entities add column if not exists vat_input_account_id uuid;
 -- The share of input VAT that can be reclaimed. 100 when costs relate to taxable and zero-rated sales;
 -- less when some also serve exempt sales (for the business and its tax adviser to determine).
 alter table entities add column if not exists vat_input_recoverable_percent numeric(5,2) not null default 100;

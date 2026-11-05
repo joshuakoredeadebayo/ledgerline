@@ -35,10 +35,10 @@ export default async function PendingMatchesPage({ searchParams }: { searchParam
   // Cast to `any`: some columns are newer than the generated Supabase types.
   const supabase = (await createClient()) as any;
 
-  const { data, count } = await supabase
+  const { data, count, error: loadError } = await supabase
     .from("matches")
     .select(
-      "id, confidence_score, match_type, created_at, match_lines(side, transactions(id, amount, currency, transaction_date, description, account_id, accounts(name, entities(name))))",
+      "id, confidence_score, match_type, created_at, match_lines(side, transactions(id, amount, currency, transaction_date, description, account_id, accounts(name, entities!entity_id(name))))",
       { count: "exact" }
     )
     .eq("status", "pending_review")
@@ -70,6 +70,12 @@ export default async function PendingMatchesPage({ searchParams }: { searchParam
       </div>
 
       {canAct && <BulkConfirmBar threshold={BULK_THRESHOLD} eligible={eligible ?? 0} />}
+
+      {loadError && (
+        <p role="alert" className="rounded-lg border border-status-exception/20 bg-status-exceptionBg px-4 py-3 text-sm text-status-exception">
+          The suggested matches couldn&apos;t be loaded: {loadError.message}
+        </p>
+      )}
 
       {rows.length > 0 ? (
         <div className="overflow-x-auto rounded-xl border border-ink-100 bg-white shadow-subtle">

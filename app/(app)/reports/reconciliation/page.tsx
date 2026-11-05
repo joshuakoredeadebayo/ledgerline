@@ -71,7 +71,7 @@ export default async function ReconciliationReportPage({ searchParams }: { searc
 
   const { data: accountRows } = await supabase
     .from("accounts")
-    .select("id, name, code, entities!inner(name, archived_at)")
+    .select("id, name, code, entities!entity_id!inner(name, archived_at)")
     .eq("is_reconcilable", true)
     .is("archived_at", null)
     .is("entities.archived_at", null)

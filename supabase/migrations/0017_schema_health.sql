@@ -28,7 +28,9 @@ as $$
         and exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'exceptions' and column_name = 'assigned_to')
         and exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'organizations' and column_name = 'require_signoff')),
       ('0016', 'Sending journal entries to QuickBooks',
-        exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'journal_entries' and column_name = 'qb_journal_entry_id'))
+        exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'journal_entries' and column_name = 'qb_journal_entry_id')),
+      ('0018', 'Fix for pages showing no exceptions or accounts',
+        not exists (select 1 from pg_constraint where conname in ('entities_vat_output_account_id_fkey', 'entities_vat_input_account_id_fkey')))
   )
   select migration, description, applied from checks order by migration;
 $$;

@@ -23,7 +23,7 @@ export async function loadPeriodSummary(supabase: any, month: string): Promise<P
   const accounts = await fetchAll<any>((from, to) =>
     supabase
       .from("accounts")
-      .select("id, name, entities!inner(name, currency, archived_at)")
+      .select("id, name, entities!entity_id!inner(name, currency, archived_at)")
       .eq("is_reconcilable", true)
       .is("archived_at", null)
       .is("entities.archived_at", null)

@@ -33,7 +33,7 @@ export async function loadExceptionAging(supabase: any, entityId?: string): Prom
     let query = supabase
       .from("exceptions")
       .select(
-        "id, exception_type, severity, created_at, transactions(amount, currency, transaction_date, description, account_id, accounts(name, entities(name)))"
+        "id, exception_type, severity, created_at, transactions(amount, currency, transaction_date, description, account_id, accounts(name, entities!entity_id(name)))"
       )
       .eq("status", "open")
       .order("created_at", { ascending: true })

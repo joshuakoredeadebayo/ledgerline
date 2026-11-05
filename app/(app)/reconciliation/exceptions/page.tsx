@@ -67,7 +67,7 @@ export default async function ExceptionsPage({ searchParams }: { searchParams: P
 
   // The newest columns (assignments) come from database update 0015. If that hasn't been run yet, fall back to
   // the older query so the list still shows, and say what's missing instead of showing an empty page.
-  const TXN = "transactions(id, amount, currency, transaction_date, description, account_id, entity_id, source, raw_payload, accounts(name, entities(name)))";
+  const TXN = "transactions(id, amount, currency, transaction_date, description, account_id, entity_id, source, raw_payload, accounts(name, entities!entity_id(name)))";
   const BASE_COLS = "id, exception_type, severity, status, created_at, resolved_at, resolved_by, resolution_reason, resolution_note";
   const buildQuery = (cols: string, mineFilter: boolean) => {
     let q = supabase

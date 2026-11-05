@@ -57,7 +57,7 @@ export async function importStatementBatch(input: {
   const supabase = (await createClient()) as any;
   const { data: account } = await supabase
     .from("accounts")
-    .select("id, entity_id, is_reconcilable, archived_at, entities(currency, archived_at)")
+    .select("id, entity_id, is_reconcilable, archived_at, entities!entity_id(currency, archived_at)")
     .eq("id", input.accountId)
     .maybeSingle();
   if (!account) return { error: "Account not found." };

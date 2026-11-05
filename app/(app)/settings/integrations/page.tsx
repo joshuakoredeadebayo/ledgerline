@@ -43,7 +43,7 @@ export default async function IntegrationsPage({
   const banks: { id: string; institution_name: string | null; disconnected_at: string | null; created_at: string }[] = itemRows ?? [];
 
   const { data: accountRows } = banks.length
-    ? await supabase.from("accounts").select("plaid_item_id, entity_id, entities(name)").in("plaid_item_id", banks.map((b) => b.id))
+    ? await supabase.from("accounts").select("plaid_item_id, entity_id, entities!entity_id(name)").in("plaid_item_id", banks.map((b) => b.id))
     : { data: [] };
   const accountsByBank = new Map<string, { count: number; entities: Set<string> }>();
   for (const a of (accountRows ?? []) as any[]) {

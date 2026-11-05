@@ -12,6 +12,7 @@ const FILE_NAMES: Record<string, string> = {
   "0014": "0014_vat.sql",
   "0015": "0015_collaboration.sql",
   "0016": "0016_quickbooks_journal_writeback.sql",
+  "0018": "0018_fix_embed_ambiguity.sql",
 };
 
 export interface SchemaCheck {

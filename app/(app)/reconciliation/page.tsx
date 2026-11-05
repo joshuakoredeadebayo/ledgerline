@@ -12,7 +12,7 @@ export default async function ReconciliationPage() {
 
   const { data: accounts, error: accountsError } = await supabase
     .from("accounts")
-    .select("id, name, code, entity_id, entities(name)")
+    .select("id, name, code, entity_id, entities!entity_id(name)")
     .eq("is_reconcilable", true)
     .order("name");
 
