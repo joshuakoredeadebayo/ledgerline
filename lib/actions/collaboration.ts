@@ -29,6 +29,15 @@ export interface NotificationItem {
   read: boolean;
 }
 
+/** Just the unread count: one small query, cheap enough to ask every minute or two. */
+export async function getUnreadCount(): Promise<number> {
+  const membership = await getCurrentMembership();
+  if (!membership) return 0;
+  const supabase = (await createClient()) as any;
+  const { count } = await supabase.from("notifications").select("id", { count: "exact", head: true }).eq("user_id", membership.userId).is("read_at", null);
+  return count ?? 0;
+}
+
 export async function listNotifications(limit = 10): Promise<{ unread: number; items: NotificationItem[] }> {
   const membership = await getCurrentMembership();
   if (!membership) return { unread: 0, items: [] };
@@ -171,6 +180,15 @@ export async function addComment(type: CommentTarget, id: string, body: string):
   if (text.length > 2000) return { error: "Keep comments under 2,000 characters." };
 
   const supabase = (await createClient()) as any;
+
+  // A simple brake on floods: at most 20 comments a minute per person.
+  const { count: recent } = await supabase
+    .from("comments")
+    .select("id", { count: "exact", head: true })
+    .eq("author_id", membership.userId)
+    .gte("created_at", new Date(Date.now() - 60_000).toISOString());
+  if ((recent ?? 0) >= 20) return { error: "You're commenting very quickly. Wait a minute and try again." };
+
   const target = await describeTarget(supabase, type, id);
   if (!target) return { error: "That item wasn't found." };
 

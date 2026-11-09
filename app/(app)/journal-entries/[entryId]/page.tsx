@@ -54,9 +54,16 @@ export default async function JournalEntryDetailPage({ params }: { params: Promi
           .from("transactions")
           .select("id, account_id, amount, currency, status, transaction_date, accounts(name)")
           .eq("source", "manual")
-          .contains("raw_payload", { journal_entry_id: entry.id })
+          .eq("raw_payload->>journal_entry_id", entry.id)
       : { data: [] };
   const items: any[] = itemRows ?? [];
+
+  // Was this entry prepared automatically from a recurring entry?
+  const { data: recurringOrigin } = await supabase
+    .from("recurring_runs")
+    .select("run_date, recurring_templates(id, name)")
+    .eq("entry_id", entry.id)
+    .maybeSingle();
 
   const { data: rosterData } = membership ? await supabase.rpc("list_org_members", { p_org: membership.organizationId }) : { data: [] };
   const emailById = new Map<string, string>(((rosterData ?? []) as any[]).map((m) => [m.user_id, m.email]));
@@ -98,6 +105,15 @@ export default async function JournalEntryDetailPage({ params }: { params: Promi
         </div>
       </div>
 
+      {recurringOrigin?.recurring_templates && (
+        <p className="rounded-lg border border-accent-100 bg-accent-50 px-4 py-3 text-sm text-ink-800">
+          Prepared automatically from the recurring entry{" "}
+          <Link href={`/recurring/${recurringOrigin.recurring_templates.id}`} className="font-medium text-accent-700 hover:text-accent-800">
+            {recurringOrigin.recurring_templates.name}
+          </Link>
+          . Check the amounts and edit anything that is different this time before you post it.
+        </p>
+      )}
       {original && (
         <p className="rounded-lg border border-ink-100 bg-white px-4 py-3 text-sm text-ink-700">
           This entry reverses{" "}

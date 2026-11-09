@@ -13,6 +13,7 @@ const FILE_NAMES: Record<string, string> = {
   "0015": "0015_collaboration.sql",
   "0016": "0016_quickbooks_journal_writeback.sql",
   "0018": "0018_fix_embed_ambiguity.sql",
+  "0019": "0019_recurring_transactions.sql",
 };
 
 export interface SchemaCheck {
@@ -22,7 +23,20 @@ export interface SchemaCheck {
 }
 
 /** Reads the built-in database check. Returns null when the check itself hasn't been installed (update 0017). */
+let healthCache: { at: number; value: SchemaCheck[] | null } | null = null;
+const HEALTH_TTL_MS = 5 * 60 * 1000;
+
 export async function loadSchemaHealth(): Promise<SchemaCheck[] | null> {
+  // The answer is the same for every user and changes only when someone runs an update, so one check every
+  // few minutes per server is plenty; without this it would run on every page view.
+  if (healthCache && Date.now() - healthCache.at < HEALTH_TTL_MS) return healthCache.value;
+  const value = await readSchemaHealth();
+  // Don't remember a "missing" answer for long, so the banner clears soon after an update is run.
+  healthCache = { at: value && value.some((c) => !c.applied) ? Date.now() - HEALTH_TTL_MS + 30_000 : Date.now(), value };
+  return value;
+}
+
+async function readSchemaHealth(): Promise<SchemaCheck[] | null> {
   try {
     const supabase = (await createClient()) as any;
     const { data, error } = await supabase.rpc("schema_health");

@@ -115,6 +115,7 @@ export async function importStatementBatch(input: {
     const { data: found, error: lookupError } = await supabase
       .from("transactions")
       .select("external_id")
+      .eq("source", "manual")
       .eq("account_id", input.accountId)
       .in("external_id", ids);
     if (lookupError) return { error: lookupError.message };

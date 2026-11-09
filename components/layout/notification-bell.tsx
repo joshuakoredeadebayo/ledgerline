@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Bell } from "lucide-react";
-import { listNotifications, markAllNotificationsRead, markNotificationRead, type NotificationItem } from "@/lib/actions/collaboration";
+import { getUnreadCount, listNotifications, markAllNotificationsRead, markNotificationRead, type NotificationItem } from "@/lib/actions/collaboration";
 import { timeAgo } from "@/lib/time-ago";
 
 /** The bell in the top bar: a count of unread notifications and the latest few. Refreshes every minute. */
@@ -15,6 +15,7 @@ export function NotificationBell() {
   const [unread, setUnread] = useState(0);
   const [items, setItems] = useState<NotificationItem[]>([]);
 
+  // Full list: only when the menu is opened.
   const load = useCallback(async () => {
     try {
       const res = await listNotifications(8);
@@ -25,11 +26,33 @@ export function NotificationBell() {
     }
   }, []);
 
+  // The badge: a single cheap count, asked only while this tab is visible, about every 90 seconds with a little
+  // random spread so thousands of open tabs never all ask at the same moment.
   useEffect(() => {
-    void load();
-    const timer = setInterval(() => void load(), 60_000);
-    return () => clearInterval(timer);
-  }, [load]);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let stopped = false;
+    const tick = async () => {
+      if (stopped) return;
+      if (document.visibilityState === "visible") {
+        try {
+          setUnread(await getUnreadCount());
+        } catch {
+          // keep the last count
+        }
+      }
+      timer = setTimeout(tick, 90_000 + Math.random() * 30_000);
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void getUnreadCount().then(setUnread).catch(() => undefined);
+    };
+    void tick();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
 
   useEffect(() => {
     if (open) void load();

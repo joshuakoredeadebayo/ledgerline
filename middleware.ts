@@ -44,7 +44,7 @@ export async function middleware(request: NextRequest) {
   requestHeaders.set("x-user-email", user?.email ?? "");
 
   const path = request.nextUrl.pathname;
-  const isPublic = PUBLIC_PATHS.some((p) => path === p) || path.startsWith("/api/webhooks");
+  const isPublic = PUBLIC_PATHS.some((p) => path === p) || path.startsWith("/api/webhooks") || path.startsWith("/api/cron");
 
   if (!user && !isPublic) {
     const loginUrl = new URL("/login", request.url);

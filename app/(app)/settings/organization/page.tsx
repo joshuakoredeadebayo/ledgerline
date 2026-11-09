@@ -29,6 +29,12 @@ export default async function OrganizationSettingsPage() {
   const schemaChecks = membership.role === "owner" || membership.role === "admin" ? await loadSchemaHealth() : null;
   const showHealth = membership.role === "owner" || membership.role === "admin";
 
+  // The daily job: is its secret set, and when did it last run?
+  const cronConfigured = !!process.env.CRON_SECRET;
+  const { data: lastJob } = showHealth
+    ? await supabase.from("job_runs").select("ran_at, ok, message").eq("job", "daily").order("ran_at", { ascending: false }).limit(1).maybeSingle()
+    : { data: null };
+
   const details = [
     { label: "Plan", value: org?.plan ? String(org.plan).replace(/^./, (c: string) => c.toUpperCase()) : "—" },
     {
@@ -52,6 +58,28 @@ export default async function OrganizationSettingsPage() {
       <section className="rounded-xl border border-ink-100 bg-white p-5 shadow-subtle">
         <OrganizationNameForm name={org?.name ?? membership.organizationName} canEdit={membership.role === "owner"} />
       </section>
+
+      {showHealth && (
+        <section className="rounded-xl border border-ink-100 bg-white p-5 shadow-subtle">
+          <h2 className="text-[15px] font-semibold text-ink-900">Automatic daily job</h2>
+          <p className="mb-3 mt-0.5 text-xs text-ink-500">Prepares recurring entries and (soon) raises reminders every morning, without anyone pressing a button.</p>
+          {!cronConfigured ? (
+            <p className="text-sm text-ink-800">
+              <span className="font-medium text-status-exception">Not set up.</span> Add an environment variable named <span className="font-medium">CRON_SECRET</span> (a long random string)
+              in Vercel under Settings, Environment Variables, then redeploy.
+            </p>
+          ) : lastJob ? (
+            <p className="text-sm text-ink-800">
+              <span className={lastJob.ok ? "font-medium text-status-matched" : "font-medium text-status-pending"}>{lastJob.ok ? "Running." : "Ran, needs attention."}</span> Last run{" "}
+              {new Date(lastJob.ran_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}. {lastJob.message}
+            </p>
+          ) : (
+            <p className="text-sm text-ink-800">
+              <span className="font-medium">Ready.</span> The secret is set. The first run happens at about 05:00 UTC (6am in Lagos); this will show the result then.
+            </p>
+          )}
+        </section>
+      )}
 
       {showHealth && (
         <section className="rounded-xl border border-ink-100 bg-white p-5 shadow-subtle">

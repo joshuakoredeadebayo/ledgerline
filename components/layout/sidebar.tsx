@@ -10,8 +10,7 @@ import {
   Building2,
   BarChart3,
   Settings,
-  ShieldCheck,
-} from "lucide-react";
+  ShieldCheck, Repeat } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { can, type Role, type Permission } from "@/lib/permissions";
 
@@ -20,6 +19,7 @@ const NAV: { href: string; label: string; icon: typeof LayoutDashboard; permissi
   { href: "/reconciliation", label: "Reconciliation", icon: GitMerge, permission: "reconciliation.view" },
   { href: "/close", label: "Close", icon: ClipboardCheck, permission: "close.manage_checklist" },
   { href: "/journal-entries", label: "Journal entries", icon: BookText, permission: "journal_entries.draft" },
+  { href: "/recurring", label: "Recurring", icon: Repeat, permission: "journal_entries.draft" },
   { href: "/entities", label: "Entities", icon: Building2, permission: "entities.manage" },
   { href: "/reports", label: "Reports", icon: BarChart3, permission: "reports.view" },
 ];

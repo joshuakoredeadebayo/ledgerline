@@ -349,7 +349,7 @@ export async function reverseJournalEntry(entryId: string): Promise<{ error?: st
     .from("transactions")
     .select("id, account_id, status, transaction_date")
     .eq("source", "manual")
-    .contains("raw_payload", { journal_entry_id: entryId });
+    .eq("raw_payload->>journal_entry_id", entryId);
   const items: { id: string; account_id: string; status: string; transaction_date: string }[] = generated ?? [];
 
   if (items.some((t) => t.status === "matched")) {

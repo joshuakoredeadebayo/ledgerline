@@ -30,7 +30,10 @@ as $$
       ('0016', 'Sending journal entries to QuickBooks',
         exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'journal_entries' and column_name = 'qb_journal_entry_id')),
       ('0018', 'Fix for pages showing no exceptions or accounts',
-        not exists (select 1 from pg_constraint where conname in ('entities_vat_output_account_id_fkey', 'entities_vat_input_account_id_fkey')))
+        not exists (select 1 from pg_constraint where conname in ('entities_vat_output_account_id_fkey', 'entities_vat_input_account_id_fkey'))),
+      ('0019', 'Recurring entries and the daily job',
+        exists (select 1 from information_schema.tables where table_schema = 'public' and table_name = 'recurring_templates')
+        and exists (select 1 from information_schema.tables where table_schema = 'public' and table_name = 'job_runs'))
   )
   select migration, description, applied from checks order by migration;
 $$;
