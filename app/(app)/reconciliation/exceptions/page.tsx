@@ -7,10 +7,12 @@ import { formatCurrency } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/shared/empty-state";
 import { withFallback } from "@/lib/safe-query";
+import { PILL, PILL_ACTIVE, PILL_COUNT } from "@/components/ui/pill-styles";
 import { ExceptionActions } from "@/components/reconciliation/exception-actions";
 import { AssignDialog } from "@/components/collab/assign-dialog";
 import { CommentsButton } from "@/components/collab/comments-button";
 
+import { PageHero, HERO_BUTTON } from "@/components/layout/page-hero";
 const PAGE_SIZE = 50;
 
 const TYPE_LABEL: Record<string, string> = {
@@ -109,44 +111,30 @@ export default async function ExceptionsPage({ searchParams }: { searchParams: P
   };
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <div>
-        <Link href="/reconciliation" className="inline-flex items-center gap-1 text-xs text-ink-500 hover:text-ink-800">
-          <ChevronLeft className="h-3.5 w-3.5" />
-          Reconciliation
-        </Link>
-        <h1 className="mt-1 text-2xl font-semibold text-ink-900">Exceptions</h1>
-        <p className="mt-1 text-sm text-ink-500">
-          Items that couldn&apos;t be matched. Resolve one when you understand it (it then stops counting toward the unexplained
-          difference), or dismiss it when it isn&apos;t a real issue. Both need a reason, which is kept in the audit log.
-        </p>
-      </div>
+    <div className="mx-auto max-w-6xl space-y-6">
+      <PageHero
+        back={{ href: "/reconciliation", label: "Reconciliation" }}
+        title="Exceptions"
+        description="Items that couldn't be matched. Resolve one when you understand it (it then stops counting toward the unexplained difference), or dismiss it when it isn't a real issue. Both need a reason, which is kept in the audit log."
+      />
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2.5">
         {TABS.map((t) => (
           <Link
             key={t.value}
             href={linkFor(t.value)}
-            className={
-              t.value === tab
-                ? "rounded-full bg-accent-500 px-3 py-1 text-xs font-medium text-white"
-                : "rounded-full border border-ink-200 bg-white px-3 py-1 text-xs font-medium text-ink-600 hover:bg-ink-50"
-            }
+            className={t.value === tab ? PILL_ACTIVE : PILL}
           >
             {t.label}
           </Link>
         ))}
         <Link
           href={linkFor(tab, 1, !onlyMine)}
-          className={
-            onlyMine
-              ? "ml-2 rounded-full bg-ink-800 px-3 py-1 text-xs font-medium text-white"
-              : "ml-2 rounded-full border border-ink-200 bg-white px-3 py-1 text-xs font-medium text-ink-600 hover:bg-ink-50"
-          }
+          className={onlyMine ? PILL_ACTIVE : PILL}
         >
           Assigned to me
         </Link>
-        <span className="ml-1 self-center text-xs text-ink-500">
+        <span className={PILL_COUNT}>
           {total.toLocaleString()} {tab}
         </span>
       </div>
@@ -167,11 +155,11 @@ export default async function ExceptionsPage({ searchParams }: { searchParams: P
         <div className="overflow-x-auto rounded-xl border border-ink-100 bg-white shadow-subtle">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-ink-100 bg-ink-50 text-left text-xs font-medium text-ink-500">
-                <th className="px-4 py-2.5 font-medium">Transaction</th>
-                <th className="px-3 py-2.5 font-medium">Account</th>
-                <th className="px-3 py-2.5 text-right font-medium">Amount</th>
-                <th className="px-3 py-2.5 font-medium">{tab === "open" ? "Type" : "Outcome"}</th>
+              <tr className="border-b border-ink-100 bg-ink-50 text-left text-sm font-semibold text-accent-700">
+                <th className="px-4 py-2.5 font-semibold">Transaction</th>
+                <th className="px-3 py-2.5 font-semibold">Account</th>
+                <th className="px-3 py-2.5 text-right font-semibold">Amount</th>
+                <th className="px-3 py-2.5 font-semibold">{tab === "open" ? "Type" : "Outcome"}</th>
                 <th className="px-4 py-2.5" />
               </tr>
             </thead>

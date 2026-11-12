@@ -11,6 +11,7 @@ import { Badge, type BadgeStatus } from "@/components/ui/badge";
 import { isMissingTable } from "@/lib/safe-query";
 import { RecurringActions } from "@/components/recurring/recurring-actions";
 
+import { PageHero, HERO_BUTTON } from "@/components/layout/page-hero";
 const STATUS: Record<string, { status: BadgeStatus; label: string }> = {
   active: { status: "matched", label: "Active" },
   paused: { status: "pending", label: "Paused" },
@@ -43,22 +44,19 @@ export default async function RecurringPage() {
   const nextUp = [...active].sort((a, b) => a.next_run_date.localeCompare(b.next_run_date))[0];
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-ink-900">Recurring entries</h1>
-          <p className="mt-1 max-w-2xl text-sm text-ink-500">
-            Rent, subscriptions, salaries and other regular entries. Each one prepares a <span className="font-medium text-ink-700">draft</span> journal entry on its date, which you
-            review before posting. Nothing is posted automatically.
-          </p>
-        </div>
-        {canEdit && !missing && (
-          <Link href="/recurring/new" className="inline-flex h-9 items-center gap-2 rounded bg-accent-500 px-4 text-sm font-medium text-white hover:bg-accent-600">
-            <Plus className="h-4 w-4" />
-            New recurring entry
-          </Link>
-        )}
-      </div>
+    <div className="mx-auto max-w-6xl space-y-6">
+      <PageHero
+        title="Recurring entries"
+        description={<>Rent, subscriptions, salaries and other regular entries. Each one prepares a <span className="font-semibold text-white">draft</span> journal entry on its date, which you review before posting. Nothing is posted automatically.</>}
+        actions={
+          canEdit && !missing ? (
+            <Link href="/recurring/new" className={HERO_BUTTON}>
+              <Plus className="h-4 w-4" />
+              New recurring entry
+            </Link>
+          ) : undefined
+        }
+      />
 
       {missing && (
         <p className="rounded-lg border border-status-pending/30 bg-status-pendingBg px-4 py-3 text-sm text-ink-800">

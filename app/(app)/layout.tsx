@@ -22,7 +22,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           role={membership.role}
         />
         <main className="flex-1 overflow-y-auto p-6">
-          <div className="mx-auto max-w-5xl">
+          <div className="mx-auto max-w-6xl">
             <DatabaseBanner role={membership.role} />
           </div>
           {children}

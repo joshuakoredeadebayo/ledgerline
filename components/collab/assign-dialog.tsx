@@ -57,7 +57,7 @@ export function AssignDialog({
     <Modal open={open} onOpenChange={setOpen}>
       <ModalTrigger asChild>
         <button type="button" className={ACTION_LINK}>
-          <UserPlus className="h-3.5 w-3.5" />
+          <UserPlus className="h-4 w-4" />
           {buttonText ?? (currentAssigneeId ? "Reassign" : "Assign")}
         </button>
       </ModalTrigger>

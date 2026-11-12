@@ -14,6 +14,7 @@ const FILE_NAMES: Record<string, string> = {
   "0016": "0016_quickbooks_journal_writeback.sql",
   "0018": "0018_fix_embed_ambiguity.sql",
   "0019": "0019_recurring_transactions.sql",
+  "0020": "0020_search_indexes.sql",
 };
 
 export interface SchemaCheck {

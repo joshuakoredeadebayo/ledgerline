@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { CreateEntityForm } from "@/components/entities/create-entity-form";
 import { ConnectBankButton } from "@/components/plaid/connect-bank-button";
 
+import { PageHero, HERO_BUTTON } from "@/components/layout/page-hero";
 function Chip({ tone, children }: { tone: "ok" | "warn" | "muted"; children: React.ReactNode }) {
   const styles = {
     ok: "bg-status-matchedBg text-status-matched",
@@ -94,13 +95,8 @@ export default async function EntitiesPage() {
   );
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-ink-900">Entities</h1>
-        <p className="mt-1 text-sm text-ink-500">
-          Legal entities within your organization. Each one has its own chart of accounts and books.
-        </p>
-      </div>
+    <div className="mx-auto max-w-6xl space-y-6">
+      <PageHero title="Entities" description="Legal entities within your organization. Each one has its own chart of accounts and books." />
 
       {canManage && (
         <div className="flex flex-wrap gap-3">

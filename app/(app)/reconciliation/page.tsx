@@ -6,6 +6,7 @@ import { AlertTriangle, ClipboardCheck, GitMerge, Landmark } from "lucide-react"
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import { getAttentionCounts, monthLabel } from "@/lib/attention-counts";
 
+import { PageHero, HERO_BUTTON } from "@/components/layout/page-hero";
 export default async function ReconciliationPage() {
   const supabase = await createClient();
   const counts = await getAttentionCounts();
@@ -67,11 +68,8 @@ export default async function ReconciliationPage() {
   }));
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-ink-900">Reconciliation</h1>
-        <p className="mt-1 text-sm text-ink-500">What needs attention, and the accounts you can match.</p>
-      </div>
+    <div className="mx-auto max-w-6xl space-y-6">
+      <PageHero title="Reconciliation" description="What needs attention, and the accounts you can match." />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <KpiCard

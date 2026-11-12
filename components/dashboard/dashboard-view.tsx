@@ -5,6 +5,7 @@ import { Badge, type BadgeStatus } from "@/components/ui/badge";
 import { EmptyState } from "@/components/shared/empty-state";
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import { DashboardPeriodSelect } from "@/components/dashboard/dashboard-period-select";
+import { PageHero } from "@/components/layout/page-hero";
 import { CashFlowChart } from "@/components/dashboard/cash-flow-chart";
 import { ReconciliationDonut } from "@/components/dashboard/reconciliation-donut";
 
@@ -54,13 +55,11 @@ export function DashboardView({ vm }: { vm: DashboardViewModel }) {
   return (
     <div className="mx-auto max-w-7xl space-y-5">
       {/* Greeting + month picker */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-[1.65rem] font-semibold leading-9 tracking-tight text-ink-900">Good to see you, {vm.userName}.</h1>
-          <p className="mt-0.5 text-sm text-ink-500">Here&apos;s what needs attention across {vm.orgName}.</p>
-        </div>
-        <DashboardPeriodSelect value={vm.month} options={vm.monthOptions} />
-      </div>
+      <PageHero
+        title={`Good to see you, ${vm.userName}.`}
+        description={`Here's what needs attention across ${vm.orgName}.`}
+        actions={<DashboardPeriodSelect value={vm.month} options={vm.monthOptions} onDark />}
+      />
 
       {!vm.hasAnyData && (
         <EmptyState
@@ -151,7 +150,7 @@ export function DashboardView({ vm }: { vm: DashboardViewModel }) {
             </div>
             <div className="flex items-center gap-4 text-xs text-ink-600">
               <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-accent-500" />Money out</span>
-              <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-[#26b36f]" />Money in</span>
+              <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-[#7C4DFF]" />Money in</span>
             </div>
           </div>
           <div className="mt-4 grid grid-cols-1 gap-5 md:grid-cols-[1fr_12.5rem]">
@@ -205,9 +204,9 @@ export function DashboardView({ vm }: { vm: DashboardViewModel }) {
             <ReconciliationDonut matched={vm.matchedCount} exceptions={vm.exceptionCount} unmatched={vm.plainUnmatched} />
             <dl className="min-w-[10rem] flex-1 space-y-2.5 text-sm">
               {[
-                { label: "Matched", value: vm.matchedCount, dot: "bg-[#26b36f]" },
-                { label: "Exceptions", value: vm.exceptionCount, dot: "bg-[#f59e0b]" },
-                { label: "Unmatched", value: vm.plainUnmatched, dot: "bg-accent-300" },
+                { label: "Matched", value: vm.matchedCount, dot: "bg-accent-500" },
+                { label: "Exceptions", value: vm.exceptionCount, dot: "bg-navy-800" },
+                { label: "Unmatched", value: vm.plainUnmatched, dot: "bg-[#7C4DFF]" },
               ].map((row) => (
                 <div key={row.label} className="flex items-center justify-between border-b border-ink-100 pb-2.5">
                   <dt className="flex items-center gap-2 text-ink-600">

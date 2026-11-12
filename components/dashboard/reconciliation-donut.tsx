@@ -14,9 +14,9 @@ export function ReconciliationDonut({
   const pct = total === 0 ? 0 : Math.round((matched / total) * 100);
 
   const segments = [
-    { value: matched, color: "#26b36f" },
-    { value: exceptions, color: "#f59e0b" },
-    { value: unmatched, color: "#9392f7" },
+    { value: matched, color: "#100DED" },
+    { value: exceptions, color: "#02007C" },
+    { value: unmatched, color: "#7C4DFF" },
   ];
 
   let offset = 0;

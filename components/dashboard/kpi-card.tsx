@@ -44,13 +44,13 @@ export function KpiCard({
     <>
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2.5">
-          <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg", toneIcon[tone])}>{icon}</span>
-          <span className="text-sm font-medium text-ink-600">{label}</span>
+          <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-xl", toneIcon[tone])}>{icon}</span>
+          <span className="text-[13.5px] font-semibold leading-tight text-ink-800">{label}</span>
         </div>
-        {href && <ChevronRight className="h-4 w-4 shrink-0 text-ink-300" />}
+        {href && <ChevronRight className="h-5 w-5 shrink-0 text-ink-300" />}
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        <span className="text-[1.5rem] font-semibold leading-8 2xl:text-[1.75rem] tracking-tight tabular-nums text-ink-900">{value}</span>
+        <span className="text-[1.6rem] font-bold leading-8 2xl:text-[1.85rem] tracking-tight tabular-nums text-ink-900">{value}</span>
         {badge && <span className="shrink-0 whitespace-nowrap">{badge}</span>}
       </div>
       {children}
@@ -58,7 +58,7 @@ export function KpiCard({
     </>
   );
 
-  const classes = cn("block rounded-xl border border-ink-100 bg-white p-5 shadow-subtle", className);
+  const classes = cn("block rounded-2xl border border-ink-100 bg-white p-5 shadow-subtle", className);
   return href ? (
     <Link href={href} className={cn(classes, "transition-shadow hover:shadow-panel")}>
       {body}

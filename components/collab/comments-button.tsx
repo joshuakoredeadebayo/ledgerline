@@ -14,7 +14,7 @@ export function CommentsButton({ type, id, canComment, label }: { type: CommentT
     <Modal open={open} onOpenChange={setOpen}>
       <ModalTrigger asChild>
         <button type="button" className={ACTION_LINK} aria-label={`Comments on ${label}`}>
-          <MessageSquare className="h-3.5 w-3.5" />
+          <MessageSquare className="h-4 w-4" />
           Comments
         </button>
       </ModalTrigger>

@@ -7,6 +7,7 @@ import { cn, formatCurrency } from "@/lib/utils";
 import { Badge, type BadgeStatus } from "@/components/ui/badge";
 import { EmptyState } from "@/components/shared/empty-state";
 
+import { PageHero, HERO_BUTTON } from "@/components/layout/page-hero";
 const PAGE_SIZE = 50;
 
 const STATUS_TABS = [
@@ -72,24 +73,19 @@ export default async function JournalEntriesPage({
   };
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-ink-900">Journal entries</h1>
-          <p className="mt-1 text-sm text-ink-500">
-            Adjusting entries for things like bank fees and corrections. Drafts can be edited; posted entries can only be reversed.
-          </p>
-        </div>
-        {canDraft && entities.length > 0 && (
-          <Link
-            href="/journal-entries/new"
-            className="inline-flex h-9 items-center gap-2 rounded bg-accent-500 px-4 text-sm font-medium text-white hover:bg-accent-600"
-          >
-            <Plus className="h-4 w-4" />
-            New journal entry
-          </Link>
-        )}
-      </div>
+    <div className="mx-auto max-w-6xl space-y-6">
+      <PageHero
+        title="Journal entries"
+        description="Adjusting entries for things like bank fees and corrections. Drafts can be edited; posted entries can only be reversed."
+        actions={
+          canDraft && entities.length > 0 ? (
+            <Link href="/journal-entries/new" className={HERO_BUTTON}>
+              <Plus className="h-4 w-4" />
+              New journal entry
+            </Link>
+          ) : undefined
+        }
+      />
 
       <div className="flex flex-wrap items-center gap-2">
         {STATUS_TABS.map((t) => (

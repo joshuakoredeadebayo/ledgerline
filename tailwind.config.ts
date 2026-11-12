@@ -29,6 +29,12 @@ const config: Config = {
           900: "#000000",
           950: "#000000",
         },
+        navy: {
+          700: "#0a0a9e",
+          800: "#06067a",
+          900: "#03025c",
+          950: "#010146",
+        },
         accent: {
           50: "#f0f0fe",
           100: "#dbdbfc",
@@ -71,11 +77,15 @@ const config: Config = {
         sm: "4px",
         DEFAULT: "6px",
         md: "8px",
-        lg: "10px",
+        lg: "12px",
+        xl: "16px",
+        "2xl": "22px",
       },
+      // Soft, faintly blue shadows: cards float a little above the page instead of sitting flat on it.
       boxShadow: {
-        subtle: "0 1px 2px 0 rgb(16 18 22 / 0.04)",
-        panel: "0 4px 16px -4px rgb(16 18 22 / 0.10)",
+        subtle: "0 1px 2px 0 rgb(16 13 237 / 0.04), 0 10px 28px -14px rgb(16 13 237 / 0.16)",
+        panel: "0 14px 34px -10px rgb(16 13 237 / 0.22)",
+        hero: "0 18px 40px -18px rgb(2 0 124 / 0.65)",
       },
     },
   },

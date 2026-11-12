@@ -6,6 +6,7 @@ import { getOrCreateClosePeriod, recomputeCloseChecklist } from "@/lib/close-per
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/shared/empty-state";
 
+import { PageHero, HERO_BUTTON } from "@/components/layout/page-hero";
 export default async function ClosePage() {
   const membership = await getCurrentMembership();
   // Cast to `any`: the reconciliations table and the close_checklist_items.is_auto
@@ -69,10 +70,7 @@ export default async function ClosePage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-ink-900">Close</h1>
-        <p className="mt-1 text-sm text-ink-500">This month's close status across your entities.</p>
-      </div>
+      <PageHero title="Close" description="This month's close status across your entities." />
 
       {rows.length > 0 ? (
         <div className="divide-y divide-ink-100 rounded-lg border border-ink-100 bg-white">

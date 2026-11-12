@@ -21,7 +21,7 @@ fs.mkdirSync(out, { recursive: true });
 // ── compile the pure TypeScript modules with the compiler that ships with the project ──
 const sucrase = require(path.join(root, "node_modules/sucrase"));
 const compiled = {};
-for (const f of ["recurring", "recurring-engine", "fetch-all", "vat", "journal-math", "balance-rec", "statement-import", "csv", "cron/maintenance"]) {
+for (const f of ["recurring", "recurring-engine", "fetch-all", "vat", "journal-math", "balance-rec", "statement-import", "csv", "cron/maintenance", "search"]) {
   const src = fs.readFileSync(path.join(root, "lib", `${f}.ts`), "utf8");
   const file = path.join(out, f.replace("/", "__") + ".js");
   fs.writeFileSync(file, sucrase.transform(src, { transforms: ["typescript", "imports"] }).code);
@@ -165,6 +165,13 @@ test("csv: text that spreadsheets would run as a formula is neutralised, numbers
   const c = L("csv");
   assert.strictEqual(c.csvCell("=cmd|x"), "'=cmd|x");
   assert.strictEqual(c.csvCell(-500), "-500");
+});
+
+test("search: typed %, _ and \\ are searched for, not treated as wildcards", () => {
+  const { likePattern } = L("search");
+  assert.strictEqual(likePattern("uber"), "%uber%");
+  assert.strictEqual(likePattern("50%_off"), "%50\\%\\_off%");
+  assert.strictEqual(likePattern("a\\b"), "%a\\\\b%");
 });
 
 // ═══ The daily job at scale ═══

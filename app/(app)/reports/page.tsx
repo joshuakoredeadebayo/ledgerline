@@ -4,6 +4,7 @@ import { getCurrentMembership } from "@/lib/actions/membership";
 import { can } from "@/lib/permissions";
 import { EmptyState } from "@/components/shared/empty-state";
 
+import { PageHero, HERO_BUTTON } from "@/components/layout/page-hero";
 const REPORTS = [
   {
     href: "/reports/reconciliation",
@@ -43,13 +44,8 @@ export default async function ReportsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-ink-900">Reports</h1>
-        <p className="mt-1 text-sm text-ink-500">
-          Every report can be printed or saved as a PDF, and downloaded as a spreadsheet (CSV). For a record of who did what, see the audit log under Settings.
-        </p>
-      </div>
+    <div className="mx-auto max-w-6xl space-y-6">
+      <PageHero title="Reports" description="Every report can be printed or saved as a PDF, and downloaded as a spreadsheet (CSV). For a record of who did what, see the audit log under Settings." />
       <ul className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
         {REPORTS.map((r) => (
           <li key={r.href}>

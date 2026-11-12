@@ -33,7 +33,9 @@ as $$
         not exists (select 1 from pg_constraint where conname in ('entities_vat_output_account_id_fkey', 'entities_vat_input_account_id_fkey'))),
       ('0019', 'Recurring entries and the daily job',
         exists (select 1 from information_schema.tables where table_schema = 'public' and table_name = 'recurring_templates')
-        and exists (select 1 from information_schema.tables where table_schema = 'public' and table_name = 'job_runs'))
+        and exists (select 1 from information_schema.tables where table_schema = 'public' and table_name = 'job_runs')),
+      ('0020', 'Fast search',
+        exists (select 1 from pg_indexes where schemaname = 'public' and indexname = 'transactions_description_trgm_idx'))
   )
   select migration, description, applied from checks order by migration;
 $$;

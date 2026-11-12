@@ -68,7 +68,7 @@ export function CashFlowChart({
             </rect>
           )}
           {d.in > 0 && (
-            <rect x={x(i) + 0.5} y={y(d.in)} width={barW} height={pad.t + innerH - y(d.in)} rx="2" fill="#26b36f">
+            <rect x={x(i) + 0.5} y={y(d.in)} width={barW} height={pad.t + innerH - y(d.in)} rx="2" fill="#7C4DFF">
               <title>{`Day ${i + 1}: in ${formatCurrency(d.in, currency)}`}</title>
             </rect>
           )}

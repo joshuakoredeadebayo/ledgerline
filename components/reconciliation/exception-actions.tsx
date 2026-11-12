@@ -5,7 +5,8 @@ import { useState, useTransition } from "react";
 import { closeException, reopenException, type ExceptionOutcome } from "@/lib/actions/exceptions";
 import { DISMISS_REASONS, RESOLVE_REASONS } from "@/lib/exception-reasons";
 import { Modal, ModalContent } from "@/components/ui/modal";
-import { ACTION_BUTTON, ACTION_LINK } from "@/components/ui/action-styles";
+import { Eye, SlidersHorizontal } from "lucide-react";
+import { ACTION_BUTTON, ACTION_BUTTON_PRIMARY, ACTION_LINK, ACTION_LINK_ROW } from "@/components/ui/action-styles";
 import { Button } from "@/components/ui/button";
 
 /** Resolve / Dismiss (with a reason) for an open exception, Reopen for a closed one, plus a link to the account. */
@@ -58,7 +59,7 @@ export function ExceptionActions({
         <div className="flex items-center justify-end gap-2">
           {status === "open" ? (
             <>
-              <button type="button" className={ACTION_BUTTON} onClick={() => open("resolved")}>
+              <button type="button" className={ACTION_BUTTON_PRIMARY} onClick={() => open("resolved")}>
                 Resolve
               </button>
               <button type="button" className={ACTION_BUTTON} onClick={() => open("dismissed")}>
@@ -85,12 +86,14 @@ export function ExceptionActions({
       )}
 
       {/* Row 2: look closer, fix it, hand it on, discuss it. */}
-      <div className="flex items-center justify-end gap-0.5">
+      <div className={ACTION_LINK_ROW}>
         <Link href={reviewHref} className={ACTION_LINK}>
+          <Eye className="h-4 w-4" />
           Review
         </Link>
         {canAct && status === "open" && adjustHref && (
           <Link href={adjustHref} className={ACTION_LINK} title="Record a journal entry for this bank item">
+            <SlidersHorizontal className="h-4 w-4" />
             Adjust
           </Link>
         )}

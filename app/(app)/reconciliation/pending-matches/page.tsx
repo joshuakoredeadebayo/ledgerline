@@ -8,6 +8,7 @@ import { ConfidenceScore } from "@/components/reconciliation/confidence-score";
 import { EmptyState } from "@/components/shared/empty-state";
 import { BulkConfirmBar, PendingMatchActions } from "@/components/reconciliation/pending-match-actions";
 
+import { PageHero, HERO_BUTTON } from "@/components/layout/page-hero";
 const PAGE_SIZE = 50;
 const BULK_THRESHOLD = 0.95;
 
@@ -56,18 +57,12 @@ export default async function PendingMatchesPage({ searchParams }: { searchParam
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <div>
-        <Link href="/reconciliation" className="inline-flex items-center gap-1 text-xs text-ink-500 hover:text-ink-800">
-          <ChevronLeft className="h-3.5 w-3.5" />
-          Reconciliation
-        </Link>
-        <h1 className="mt-1 text-2xl font-semibold text-ink-900">Matches pending review</h1>
-        <p className="mt-1 text-sm text-ink-500">
-          {total.toLocaleString()} suggested match{total === 1 ? "" : "es"}, highest confidence first. Confirm or reject them here, or open the account to
-          see them in context.
-        </p>
-      </div>
+    <div className="mx-auto max-w-6xl space-y-6">
+      <PageHero
+        back={{ href: "/reconciliation", label: "Reconciliation" }}
+        title="Matches pending review"
+        description={`${total.toLocaleString()} suggested match${total === 1 ? "" : "es"}, highest confidence first. Confirm or reject them here, or open the account to see them in context.`}
+      />
 
       {canAct && <BulkConfirmBar threshold={BULK_THRESHOLD} eligible={eligible ?? 0} />}
 
